@@ -1,11 +1,52 @@
-import { Canvas } from '@react-three/fiber';
-import { useEffect, useMemo, useRef } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { Suspense, lazy, useEffect, useMemo, useRef } from 'react';
+import type { DirectionalLight } from 'three';
 import { bindCameraGestures } from '../camera';
-import { allLocations, useGame } from '../store';
+import { allLocations, playerState, useGame } from '../store';
+import { Landmarks } from './LandmarkModels';
 import { TOWN_LAYOUTS, buildCollisionWorld, hillPositions, npcSpot, treePositions } from './layout';
 import { LocationSpot, type MarkerState } from './LocationSpot';
 import { PlayerController, type Spot } from './PlayerController';
-import { Lakes, MapLabels, Mountains, Nature, Terrain, Towns } from './Scenery';
+import { Clouds, MapLabels, Mountains, Nature, SUN_DIRECTION, Sky, Towns } from './Scenery';
+import { Terrain } from './Terrain';
+
+const Effects = lazy(() => import('./Effects'));
+
+const HORIZON = '#D4EEFF';
+const SHADOW_SPAN = 70;
+
+/** Sunlight that follows the player so its shadow map always covers what the camera sees. */
+function Sun({ shadows }: { shadows: boolean }) {
+    const light = useRef<DirectionalLight>(null);
+    useFrame(() => {
+        const l = light.current;
+        if (!l) return;
+        // Snap to the shadow-map texel grid so shadows don't shimmer while walking.
+        const step = (SHADOW_SPAN * 2) / 2048;
+        const x = Math.round(playerState.x / step) * step;
+        const z = Math.round(playerState.z / step) * step;
+        l.position.set(x + SUN_DIRECTION.x * 150, SUN_DIRECTION.y * 150, z + SUN_DIRECTION.z * 150);
+        l.target.position.set(x, 0, z);
+        l.target.updateMatrixWorld();
+    });
+    return (
+        <directionalLight
+            ref={light}
+            intensity={1.8}
+            color="#FFF3DD"
+            castShadow={shadows}
+            shadow-mapSize={[2048, 2048]}
+            shadow-camera-left={-SHADOW_SPAN}
+            shadow-camera-right={SHADOW_SPAN}
+            shadow-camera-top={SHADOW_SPAN}
+            shadow-camera-bottom={-SHADOW_SPAN}
+            shadow-camera-near={20}
+            shadow-camera-far={320}
+            shadow-bias={-0.0004}
+            shadow-normalBias={0.05}
+        />
+    );
+}
 
 /**
  * The 3D Region XII world. Loaded lazily so the login screen stays tiny on slow connections.
@@ -13,23 +54,22 @@ import { Lakes, MapLabels, Mountains, Nature, Terrain, Towns } from './Scenery';
 export default function GameCanvas() {
     const zones = useGame((s) => s.zones);
     const quality = useGame((s) => s.quality);
+    const high = quality === 'high';
     const wrapper = useRef<HTMLDivElement>(null);
 
     useEffect(() => (wrapper.current ? bindCameraGestures(wrapper.current) : undefined), []);
 
     const locations = useMemo(() => allLocations(zones), [zones]);
-
-    // Zones in the database are the provinces; locked ones can't be entered yet.
-    const lockedKey = zones.filter((z) => z.locked).map((z) => z.slug).join(',');
     const unlockLevels = useMemo(() => Object.fromEntries(zones.map((z) => [z.slug, z.unlock_level])), [zones]);
 
-    const trees = useMemo(() => treePositions(quality === 'low' ? 700 : 1600), [quality]);
-    const hills = useMemo(() => hillPositions(quality === 'low' ? 25 : 45), [quality]);
-
-    const world = useMemo(
-        () => buildCollisionWorld(locations, trees, hills, new Set(lockedKey ? lockedKey.split(',') : [])),
-        [locations, trees, hills, lockedKey],
+    // NPC buildings come from the database, so trees are cleared around them here.
+    const trees = useMemo(
+        () => treePositions(high ? 1800 : 800).filter(([x, z]) => !locations.some((l) => Math.hypot(l.position[0] - x, l.position[1] - z) < 10)),
+        [high, locations],
     );
+    const hills = useMemo(() => hillPositions(high ? 40 : 24), [high]);
+
+    const world = useMemo(() => buildCollisionWorld(locations, trees, hills), [locations, trees, hills]);
 
     const spots = useMemo<Spot[]>(
         () => [
@@ -51,20 +91,23 @@ export default function GameCanvas() {
         <div ref={wrapper} className="absolute inset-0 touch-none">
             <Canvas
                 flat
-                dpr={quality === 'low' ? 1 : [1, 1.5]}
-                gl={{ antialias: quality === 'high', powerPreference: 'high-performance' }}
-                camera={{ fov: 45, near: 0.5, far: 700, position: [0, 20, 26] }}
+                shadows={high}
+                dpr={high ? [1, 1.5] : 1}
+                gl={{ antialias: false, powerPreference: 'high-performance' }}
+                camera={{ fov: 45, near: 0.5, far: 800, position: [0, 20, 26] }}
             >
-                <color attach="background" args={['#B5D4F4']} />
-                <fog attach="fog" args={['#B5D4F4', quality === 'low' ? 70 : 110, quality === 'low' ? 220 : 380]} />
-                <hemisphereLight args={['#ffffff', '#97C459', 1.6]} />
-                <directionalLight position={[60, 120, 50]} intensity={1.8} />
+                <color attach="background" args={[HORIZON]} />
+                <fog attach="fog" args={[HORIZON, high ? 150 : 100, high ? 440 : 290]} />
+                <hemisphereLight args={['#FFFFFF', '#8FBF6A', 1.1]} />
+                <Sun shadows={high} />
 
+                <Sky />
+                {high && <Clouds count={18} />}
                 <Terrain />
-                <Lakes />
                 <Mountains />
                 <Nature trees={trees} hills={hills} />
                 <Towns />
+                <Landmarks range={high ? 360 : 240} />
                 <MapLabels />
 
                 {locations.map((loc) => (
@@ -72,6 +115,12 @@ export default function GameCanvas() {
                 ))}
 
                 <PlayerController world={world} spots={spots} unlockLevels={unlockLevels} />
+
+                {high && (
+                    <Suspense fallback={null}>
+                        <Effects />
+                    </Suspense>
+                )}
             </Canvas>
         </div>
     );

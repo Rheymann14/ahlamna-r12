@@ -1,119 +1,56 @@
 import { useFrame } from '@react-three/fiber';
-import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
 import {
-    BufferGeometry,
+    BackSide,
+    BoxGeometry,
     CanvasTexture,
+    Color,
+    ConeGeometry,
+    CylinderGeometry,
     Float32BufferAttribute,
+    IcosahedronGeometry,
     Object3D,
-    ExtrudeGeometry,
-    Shape,
+    ShaderMaterial,
     SpriteMaterial,
+    type Sprite,
+    Vector3,
+    type BufferGeometry,
+    type Group,
     type InstancedMesh,
     type Mesh,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { TOWN_LAYOUTS, ROADS, lakeWorld, mountainWorld, type TownLayout } from './layout';
-import { LAKES, MOUNTAINS, NEIGHBOURS, PROVINCES, toWorld, type MapPoint } from './region';
+import { playerState } from '../store';
+import { LANDMARKS } from './landmarks';
+import { TOWN_LAYOUTS, lakeWorld, mountainWorld, type TownLayout, type Tree } from './layout';
+import { LAKES, MOUNTAINS, PROVINCES, toWorld } from './region';
 
-/* ---------------------------------------------------------------- terrain */
+/** Direction of the sun (also used for the shadow-casting light). */
+export const SUN_DIRECTION = new Vector3(60, 110, 40).normalize();
 
-function shapeFrom(outline: MapPoint[]): Shape {
-    // Shape lives in the XY plane; after rotating -90° about X, shape y becomes world -z.
-    const shape = new Shape();
-    outline.forEach((p, i) => {
-        const [x, z] = toWorld(p);
-        if (i === 0) shape.moveTo(x, -z);
-        else shape.lineTo(x, -z);
+/* ---------------------------------------------------------------- helpers */
+
+/** Renders its children only while the player is within `range` meters (saves draw calls far away). */
+export function Near({ x, z, range = 320, children }: { x: number; z: number; range?: number; children: ReactNode }) {
+    const ref = useRef<Group>(null);
+    useFrame(() => {
+        if (ref.current) ref.current.visible = Math.hypot(playerState.x - x, playerState.z - z) < range;
     });
-    return shape;
+    return <group ref={ref}>{children}</group>;
 }
 
-function LandMass({ outline, color, top, depth }: { outline: MapPoint[]; color: string; top: number; depth: number }) {
-    const geometry = useMemo(() => new ExtrudeGeometry(shapeFrom(outline), { depth, bevelEnabled: false }), [outline, depth]);
-    useEffect(() => () => geometry.dispose(), [geometry]);
-    return (
-        <mesh geometry={geometry} rotation-x={-Math.PI / 2} position-y={top - depth}>
-            <meshLambertMaterial color={color} />
-        </mesh>
-    );
-}
-
-function ProvinceBorders() {
-    // Dashed white lines along province edges, like a game map.
-    const geometry = useMemo(() => {
-        const pts: number[] = [];
-        for (const p of PROVINCES) {
-            p.outline.forEach((a, i) => {
-                const b = p.outline[(i + 1) % p.outline.length];
-                const [ax, az] = toWorld(a);
-                const [bx, bz] = toWorld(b);
-                const len = Math.hypot(bx - ax, bz - az);
-                const dashes = Math.max(1, Math.floor(len / 6));
-                for (let d = 0; d < dashes; d++) {
-                    const t0 = d / dashes;
-                    const t1 = t0 + 0.5 / dashes;
-                    pts.push(ax + (bx - ax) * t0, 0.08, az + (bz - az) * t0, ax + (bx - ax) * t1, 0.08, az + (bz - az) * t1);
-                }
-            });
-        }
-        const g = new BufferGeometry();
-        g.setAttribute('position', new Float32BufferAttribute(pts, 3));
-        return g;
-    }, []);
-    return (
-        <lineSegments geometry={geometry}>
-            <lineBasicMaterial color="#FFFFFF" transparent opacity={0.55} />
-        </lineSegments>
-    );
-}
-
-function Roads() {
-    // All roads merged into one mesh (one draw call).
-    const geometry = useMemo(() => {
-        const parts: BufferGeometry[] = [];
-        const W = 2.6; // half-width
-        for (const line of ROADS) {
-            for (let i = 1; i < line.length; i++) {
-                const [ax, az] = line[i - 1];
-                const [bx, bz] = line[i];
-                const len = Math.hypot(bx - ax, bz - az);
-                const nx = (-(bz - az) / len) * W;
-                const nz = ((bx - ax) / len) * W;
-                const g = new BufferGeometry();
-                g.setAttribute('position', new Float32BufferAttribute([ax + nx, 0.04, az + nz, bx + nx, 0.04, bz + nz, bx - nx, 0.04, bz - nz, ax - nx, 0.04, az - nz], 3));
-                g.setIndex([0, 2, 1, 0, 3, 2]);
-                g.computeVertexNormals();
-                parts.push(g);
+/** Makes every mesh inside cast (and optionally receive) shadows. */
+export function Shadowed({ children, receive = false }: { children: ReactNode; receive?: boolean }) {
+    const ref = useRef<Group>(null);
+    useLayoutEffect(() => {
+        ref.current?.traverse((o) => {
+            if ((o as Mesh).isMesh) {
+                o.castShadow = true;
+                o.receiveShadow = receive;
             }
-        }
-        const merged = mergeGeometries(parts);
-        parts.forEach((p) => p.dispose());
-        return merged;
-    }, []);
-    return (
-        <mesh geometry={geometry}>
-            <meshLambertMaterial color="#C9C2AE" />
-        </mesh>
-    );
-}
-
-export function Terrain() {
-    return (
-        <group>
-            <mesh rotation-x={-Math.PI / 2} position-y={-1.2}>
-                <planeGeometry args={[4000, 4000]} />
-                <meshLambertMaterial color="#378ADD" />
-            </mesh>
-            {NEIGHBOURS.map((n) => (
-                <LandMass key={n.name} outline={n.outline} color="#C9C6B6" top={-0.5} depth={1} />
-            ))}
-            {PROVINCES.map((p, i) => (
-                <LandMass key={`${p.slug}-${i}`} outline={p.outline} color={p.groundColor} top={0} depth={1.6} />
-            ))}
-            <ProvinceBorders />
-            <Roads />
-        </group>
-    );
+        });
+    });
+    return <group ref={ref}>{children}</group>;
 }
 
 /* ---------------------------------------------------------------- labels */
@@ -155,36 +92,129 @@ export function Label({ text, position, height, size = 48, color = '#FFFFFF', st
         },
         [label],
     );
-    return <sprite material={label.material} position={position} scale={[height * label.aspect, height, 1]} />;
+    // Hide a label when the camera is nearly inside it, so it never fills the screen.
+    const sprite = useRef<Sprite>(null);
+    useFrame(({ camera }) => {
+        if (sprite.current) sprite.current.visible = camera.position.distanceTo(sprite.current.position) > height * 5;
+    });
+    return <sprite ref={sprite} material={label.material} position={position} scale={[height * label.aspect, height, 1]} />;
 }
 
 export function MapLabels() {
     return (
         <group>
-            {PROVINCES.map((p, i) => {
+            {PROVINCES.filter((p, i, all) => all.findIndex((q) => q.slug === p.slug) === i).map((p) => {
                 const [x, z] = toWorld(p.labelAt);
-                return <Label key={`${p.slug}-${i}`} text={p.name.toUpperCase()} position={[x, 40, z]} height={9} size={64} color="#FFFFFF" stroke="#27500A" />;
+                return <Label key={p.slug} text={p.name.toUpperCase()} position={[x, 60, z]} height={13} size={64} color="#FFFFFF" stroke="#27500A" />;
             })}
-            {TOWN_LAYOUTS.map((t) => (
-                <Label key={t.slug} text={t.name} position={[t.center[0], 16, t.center[1] - 6]} height={3.4} size={48} color="#412402" stroke="#FAEEDA" bg="rgba(250,238,218,0.85)" />
+            {TOWN_LAYOUTS.filter((t) => !LANDMARKS.some((l) => l.town === t.slug && l.at[0] === 0 && l.at[1] === 0)).map((t) => (
+                <Label key={t.slug} text={t.name} position={[t.center[0], 30, t.center[1] - 8]} height={4.2} size={48} color="#412402" stroke="#FAEEDA" bg="rgba(250,238,218,0.88)" />
             ))}
             {MOUNTAINS.map((m) => {
                 const w = mountainWorld(m);
-                return <Label key={m.name} text={m.name} position={[w.x, w.h + 8, w.z]} height={5} size={48} color="#FFFFFF" stroke="#444441" />;
+                return <Label key={m.name} text={m.name} position={[w.x, w.h + 10, w.z]} height={7} size={48} color="#FFFFFF" stroke="#444441" />;
             })}
             {LAKES.map((l) => {
                 const w = lakeWorld(l);
-                return <Label key={l.name} text={l.name} position={[w.x, 6, w.z]} height={3.5} size={44} color="#FFFFFF" stroke="#0C447C" />;
+                return <Label key={l.name} text={l.name} position={[w.x, 7, w.z]} height={4.5} size={44} color="#FFFFFF" stroke="#0C447C" />;
             })}
         </group>
+    );
+}
+
+/* ---------------------------------------------------------------- sky */
+
+export function Sky() {
+    const ref = useRef<Mesh>(null);
+    const material = useMemo(
+        () =>
+            new ShaderMaterial({
+                side: BackSide,
+                depthWrite: false,
+                fog: false,
+                uniforms: {
+                    uTop: { value: new Color('#3E8EE0') },
+                    uHorizon: { value: new Color('#D4EEFF') },
+                    uSun: { value: SUN_DIRECTION },
+                },
+                vertexShader: /* glsl */ `
+                    varying vec3 vDir;
+                    void main() {
+                        vDir = normalize(position);
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }`,
+                fragmentShader: /* glsl */ `
+                    uniform vec3 uTop;
+                    uniform vec3 uHorizon;
+                    uniform vec3 uSun;
+                    varying vec3 vDir;
+                    void main() {
+                        vec3 col = mix(uHorizon, uTop, smoothstep(0.0, 0.5, vDir.y));
+                        float sun = max(dot(normalize(vDir), uSun), 0.0);
+                        col += vec3(1.0, 0.95, 0.8) * (pow(sun, 600.0) * 1.2 + pow(sun, 16.0) * 0.25);
+                        gl_FragColor = vec4(col, 1.0);
+                    }`,
+            }),
+        [],
+    );
+    useEffect(() => () => material.dispose(), [material]);
+    // The dome travels with the camera so it is never reached.
+    useFrame(({ camera }) => ref.current?.position.copy(camera.position));
+    return (
+        <mesh ref={ref} material={material} renderOrder={-1} frustumCulled={false}>
+            <sphereGeometry args={[600, 24, 12]} />
+        </mesh>
+    );
+}
+
+const CLOUD_GEOMETRY = (() => {
+    const parts = [
+        [0, 0, 0, 1],
+        [1.1, -0.15, 0.2, 0.75],
+        [-1.05, -0.2, -0.1, 0.7],
+        [0.4, 0.45, -0.3, 0.65],
+        [-0.3, 0.1, 0.6, 0.6],
+    ].map(([x, y, z, r]) => new IcosahedronGeometry(r, 1).translate(x, y, z));
+    return mergeGeometries(parts)!.scale(1, 0.6, 0.8);
+})();
+
+/** Puffy low-poly clouds drifting east. */
+export function Clouds({ count }: { count: number }) {
+    const ref = useRef<InstancedMesh>(null);
+    const clouds = useMemo(() => {
+        let s = 99;
+        const rand = () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646;
+        return Array.from({ length: count }, () => ({ x: -700 + rand() * 1400, y: 75 + rand() * 45, z: -900 + rand() * 1500, s: 10 + rand() * 12, speed: 1.5 + rand() * 2 }));
+    }, [count]);
+    useFrame((_, delta) => {
+        const mesh = ref.current;
+        if (!mesh) return;
+        clouds.forEach((c, i) => {
+            c.x += c.speed * Math.min(delta, 0.1);
+            if (c.x > 700) c.x = -700;
+            dummy.position.set(c.x, c.y, c.z);
+            dummy.rotation.set(0, i, 0);
+            dummy.scale.setScalar(c.s);
+            dummy.updateMatrix();
+            mesh.setMatrixAt(i, dummy.matrix);
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+    });
+    return (
+        <instancedMesh ref={ref} args={[CLOUD_GEOMETRY, undefined, count]} frustumCulled={false}>
+            <meshLambertMaterial color="#FFFFFF" emissive="#DDE8F5" emissiveIntensity={0.55} flatShading />
+        </instancedMesh>
     );
 }
 
 /* ---------------------------------------------------------------- nature */
 
 const dummy = new Object3D();
+const tint = new Color();
 
-function useInstances(ref: RefObject<InstancedMesh | null>, items: [number, number, number][], place: (o: Object3D, item: [number, number, number], i: number) => void) {
+type Placer<T> = (o: Object3D, item: T, i: number) => void;
+
+function useInstances<T>(ref: RefObject<InstancedMesh | null>, items: T[], place: Placer<T>, colors?: string[]) {
     useLayoutEffect(() => {
         const mesh = ref.current;
         if (!mesh) return;
@@ -195,99 +225,136 @@ function useInstances(ref: RefObject<InstancedMesh | null>, items: [number, numb
             place(dummy, item, i);
             dummy.updateMatrix();
             mesh.setMatrixAt(i, dummy.matrix);
+            if (colors) mesh.setColorAt(i, tint.set(colors[(i * 7) % colors.length]));
         });
         mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
         mesh.computeBoundingSphere();
-    }, [ref, items, place]);
+    }, [ref, items, place, colors]);
 }
 
-const placeTrunk = (o: Object3D, [x, z, s]: [number, number, number]) => {
-    o.position.set(x, 0.6 * s, z);
-    o.scale.setScalar(s);
-};
-const placeLeaves = (o: Object3D, [x, z, s]: [number, number, number], i: number) => {
-    o.position.set(x, 2.1 * s, z);
-    o.rotation.y = i;
-    o.scale.setScalar(s);
-};
-const placeHill = (o: Object3D, [x, z, s]: [number, number, number], i: number) => {
-    o.position.set(x, 0, z);
-    o.rotation.y = i * 1.7;
-    o.scale.set(12 * s, 5 * s, 10 * s);
-};
-
-/** Trees and hills: one draw call per mesh type however many there are. */
-export function Nature({ trees, hills }: { trees: [number, number, number][]; hills: [number, number, number][] }) {
+/** One kind of tree as two instanced meshes (trunk + foliage): one draw call each however many there are. */
+function TreeKindMesh({ trees, trunk, foliage, trunkColor, colors, place }: { trees: Tree[]; trunk: BufferGeometry; foliage: BufferGeometry; trunkColor: string; colors: string[]; place: Placer<Tree> }) {
     const trunks = useRef<InstancedMesh>(null);
     const leaves = useRef<InstancedMesh>(null);
-    const hillMesh = useRef<InstancedMesh>(null);
-    useInstances(trunks, trees, placeTrunk);
-    useInstances(leaves, trees, placeLeaves);
-    useInstances(hillMesh, hills, placeHill);
-
+    useInstances(trunks, trees, place);
+    useInstances(leaves, trees, place, colors);
+    if (trees.length === 0) return null;
     return (
         <group>
-            <instancedMesh ref={trunks} args={[undefined, undefined, trees.length]} key={`t${trees.length}`}>
-                <cylinderGeometry args={[0.18, 0.26, 1.2, 5]} />
-                <meshLambertMaterial color="#854F0B" flatShading />
+            <instancedMesh ref={trunks} args={[trunk, undefined, trees.length]} key={`t${trees.length}`} castShadow>
+                <meshLambertMaterial color={trunkColor} flatShading />
             </instancedMesh>
-            <instancedMesh ref={leaves} args={[undefined, undefined, trees.length]} key={`l${trees.length}`}>
-                <icosahedronGeometry args={[1.25, 0]} />
-                <meshLambertMaterial color="#3B6D11" flatShading />
-            </instancedMesh>
-            <instancedMesh ref={hillMesh} args={[undefined, undefined, hills.length]} key={`h${hills.length}`}>
-                <sphereGeometry args={[1, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2]} />
-                <meshLambertMaterial color="#639922" flatShading />
+            <instancedMesh ref={leaves} args={[foliage, undefined, trees.length]} key={`l${trees.length}`} castShadow>
+                <meshLambertMaterial color="#FFFFFF" flatShading />
             </instancedMesh>
         </group>
     );
+}
+
+const TREE_GEOMETRY = {
+    broadleaf: {
+        trunk: new CylinderGeometry(0.18, 0.28, 1.4, 5).translate(0, 0.7, 0),
+        foliage: mergeGeometries([new IcosahedronGeometry(1.35, 0).translate(0, 2.3, 0), new IcosahedronGeometry(0.9, 0).translate(0.55, 3.0, 0.2)])!,
+    },
+    palm: {
+        trunk: new CylinderGeometry(0.13, 0.21, 5, 5).translate(0, 2.5, 0),
+        foliage: mergeGeometries(
+            Array.from({ length: 7 }, (_, k) => new BoxGeometry(0.55, 0.06, 2.8).translate(0, 0, 1.4).rotateX(0.55).rotateY((k / 7) * Math.PI * 2).translate(0, 5, 0)),
+        )!,
+    },
+    pine: {
+        trunk: new CylinderGeometry(0.14, 0.2, 1, 5).translate(0, 0.5, 0),
+        foliage: mergeGeometries([
+            new ConeGeometry(1.4, 2.4, 7).translate(0, 2.0, 0),
+            new ConeGeometry(1.05, 2.0, 7).translate(0, 3.1, 0),
+            new ConeGeometry(0.7, 1.6, 7).translate(0, 4.1, 0),
+        ])!,
+    },
+};
+
+const BROADLEAF_COLORS = ['#4E9A2E', '#5FAE3A', '#3F8A2A', '#6DB843', '#7AC14E', '#559F33'];
+const PALM_COLORS = ['#5DAA3A', '#6BB545', '#4F9A30', '#7CBF4C'];
+const PINE_COLORS = ['#2F6B34', '#3A7A3C', '#2A5F30', '#447F3E'];
+const HILL_COLORS = ['#8CCB63', '#7DBE57', '#94D16C', '#86C45E'];
+
+const placeUpright: Placer<Tree> = (o, [x, z, s], i) => {
+    o.position.set(x, 0, z);
+    o.rotation.y = i * 2.4;
+    o.scale.setScalar(s);
+};
+const placePalm: Placer<Tree> = (o, [x, z, s], i) => {
+    o.position.set(x, 0, z);
+    o.rotation.set(Math.sin(i) * 0.16, i * 1.3, Math.cos(i * 1.7) * 0.16);
+    o.scale.setScalar(s);
+};
+const placeHill: Placer<[number, number, number]> = (o, [x, z, s], i) => {
+    o.position.set(x, 0, z);
+    o.rotation.y = i * 1.7;
+    o.scale.set(12 * s, 4.5 * s, 10 * s);
+};
+
+export function Nature({ trees, hills }: { trees: Tree[]; hills: [number, number, number][] }) {
+    const byKind = useMemo(() => [0, 1, 2].map((k) => trees.filter((t) => t[3] === k)), [trees]);
+    const hillMesh = useRef<InstancedMesh>(null);
+    useInstances(hillMesh, hills, placeHill, HILL_COLORS);
+
+    return (
+        <group>
+            <TreeKindMesh trees={byKind[0]} {...TREE_GEOMETRY.broadleaf} trunkColor="#8A5A2B" colors={BROADLEAF_COLORS} place={placeUpright} />
+            <TreeKindMesh trees={byKind[1]} {...TREE_GEOMETRY.palm} trunkColor="#9C7A4F" colors={PALM_COLORS} place={placePalm} />
+            <TreeKindMesh trees={byKind[2]} {...TREE_GEOMETRY.pine} trunkColor="#6B4A2B" colors={PINE_COLORS} place={placeUpright} />
+            <instancedMesh ref={hillMesh} args={[undefined, undefined, hills.length]} key={`h${hills.length}`} receiveShadow castShadow>
+                <sphereGeometry args={[1, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2]} />
+                <meshLambertMaterial color="#FFFFFF" flatShading />
+            </instancedMesh>
+        </group>
+    );
+}
+
+/** A low-poly mountain: a cone with bumpy, deterministic sides, coloured by height (forest, rock, snow). */
+function mountainGeometry(r: number, h: number, seed: number, snow: boolean): BufferGeometry {
+    const cone = new ConeGeometry(r, h, 20, 7, true);
+    const pos = cone.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const z = pos.getZ(i);
+        const t = (y + h / 2) / h; // 0 at the base, 1 at the peak
+        const a = Math.atan2(z, x);
+        // Vertices on the seam share a position, so a function of position keeps the surface closed.
+        const hash = Math.sin(Math.round(x * 10) * 12.9898 + Math.round(z * 10) * 78.233 + seed) * 43758.5453;
+        const jitter = hash - Math.floor(hash);
+        const k = t < 0.999 ? 1 + 0.16 * Math.sin(a * 3 + seed) + 0.1 * Math.sin(a * 7 + seed * 2) + (jitter - 0.5) * 0.18 : 1;
+        pos.setXYZ(i, x * k, y + (t > 0.02 && t < 0.98 ? (jitter - 0.5) * h * 0.05 : 0) + h / 2, z * k);
+    }
+    const g = cone.toNonIndexed();
+    cone.dispose();
+    g.computeVertexNormals();
+    const colors: number[] = [];
+    const p = g.attributes.position;
+    const c = new Color();
+    for (let i = 0; i < p.count; i += 3) {
+        const t = (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3 / h;
+        c.set(t < 0.3 ? '#6FAE45' : t < 0.58 ? '#3F7A2A' : t < (snow ? 0.8 : 1.1) ? '#8C8577' : '#F4F6F2');
+        if (!snow && t > 0.86) c.set('#77706A');
+        for (let k = 0; k < 3; k++) colors.push(c.r, c.g, c.b);
+    }
+    g.setAttribute('color', new Float32BufferAttribute(colors, 3));
+    return g;
 }
 
 export function Mountains() {
+    const geometries = useMemo(() => MOUNTAINS.map((m, i) => mountainGeometry(mountainWorld(m).r, m.height, i * 3.7 + 1, !!m.snow)), []);
+    useEffect(() => () => geometries.forEach((g) => g.dispose()), [geometries]);
     return (
         <group>
-            {MOUNTAINS.map((m) => {
+            {MOUNTAINS.map((m, i) => {
                 const w = mountainWorld(m);
                 return (
-                    <group key={m.name} position={[w.x, 0, w.z]}>
-                        <mesh position-y={w.h / 2}>
-                            <coneGeometry args={[w.r, w.h, 9, 3]} />
-                            <meshLambertMaterial color="#3B6D11" flatShading />
-                        </mesh>
-                        <mesh position-y={w.h * 0.86}>
-                            <coneGeometry args={[w.r * 0.28, w.h * 0.28, 9]} />
-                            <meshLambertMaterial color="#888780" flatShading />
-                        </mesh>
-                    </group>
-                );
-            })}
-        </group>
-    );
-}
-
-export function Lakes() {
-    return (
-        <group>
-            {LAKES.map((lake) => {
-                const l = lakeWorld(lake);
-                return (
-                    <group key={lake.name} position={[l.x, 0, l.z]}>
-                        <mesh rotation-x={-Math.PI / 2} position-y={0.05} scale={[l.rx + 2, l.rz + 2, 1]}>
-                            <circleGeometry args={[1, 28]} />
-                            <meshLambertMaterial color="#C2B280" />
-                        </mesh>
-                        <mesh rotation-x={-Math.PI / 2} position-y={0.08} scale={[l.rx, l.rz, 1]}>
-                            <circleGeometry args={[1, 28]} />
-                            <meshLambertMaterial color="#378ADD" />
-                        </mesh>
-                        {/* lily pads, a nod to Lake Sebu */}
-                        {[[-0.4, 0.2], [0.3, -0.3], [0.55, 0.35], [-0.6, -0.2], [0.1, 0.5]].map(([fx, fz], i) => (
-                            <mesh key={i} rotation-x={-Math.PI / 2} position={[fx * l.rx, 0.1, fz * l.rz]}>
-                                <circleGeometry args={[0.9, 7]} />
-                                <meshLambertMaterial color="#639922" />
-                            </mesh>
-                        ))}
-                    </group>
+                    <mesh key={m.name} geometry={geometries[i]} position={[w.x, -0.2, w.z]} castShadow receiveShadow>
+                        <meshLambertMaterial vertexColors flatShading />
+                    </mesh>
                 );
             })}
         </group>
@@ -306,58 +373,49 @@ export function Roof({ w, d, h, color, y }: { w: number; d: number; h: number; c
     );
 }
 
-function Fountain() {
-    const water = useRef<Mesh>(null);
-    useFrame(({ clock }) => {
-        if (water.current) water.current.position.y = 1.0 + Math.sin(clock.elapsedTime * 2) * 0.05;
-    });
-    return (
-        <group>
-            <mesh position-y={0.3}>
-                <cylinderGeometry args={[1.6, 1.8, 0.6, 12]} />
-                <meshLambertMaterial color="#B4B2A9" flatShading />
-            </mesh>
-            <mesh position-y={0.62}>
-                <cylinderGeometry args={[1.35, 1.35, 0.06, 12]} />
-                <meshLambertMaterial color="#378ADD" />
-            </mesh>
-            <mesh position-y={1.0}>
-                <cylinderGeometry args={[0.2, 0.3, 1.2, 6]} />
-                <meshLambertMaterial color="#888780" flatShading />
-            </mesh>
-            <mesh ref={water}>
-                <icosahedronGeometry args={[0.35, 0]} />
-                <meshLambertMaterial color="#85B7EB" flatShading />
-            </mesh>
-        </group>
-    );
-}
-
 /** A jeepney: the classic Filipino ride, built from boxes until real art arrives. */
-function Jeepney() {
+export function Jeepney({ body = '#E6F1FB', stripe = '#E24B4A' }: { body?: string; stripe?: string }) {
     return (
         <group>
-            <mesh position-y={1.1}>
-                <boxGeometry args={[5, 1.3, 2]} />
-                <meshLambertMaterial color="#E6F1FB" flatShading />
+            <mesh position-y={1.15}>
+                <boxGeometry args={[4.4, 1.4, 2]} />
+                <meshLambertMaterial color={body} flatShading />
             </mesh>
-            <mesh position={[0, 1.15, 1.01]}>
-                <planeGeometry args={[4.6, 0.25]} />
-                <meshLambertMaterial color="#E24B4A" />
-            </mesh>
-            <mesh position={[0, 0.85, 1.01]}>
-                <planeGeometry args={[4.6, 0.18]} />
-                <meshLambertMaterial color="#EF9F27" />
-            </mesh>
+            {[1.01, -1.01].map((z) => (
+                <group key={z}>
+                    <mesh position={[0, 1.2, z]} rotation-y={z < 0 ? Math.PI : 0}>
+                        <planeGeometry args={[4.2, 0.25]} />
+                        <meshLambertMaterial color={stripe} />
+                    </mesh>
+                    <mesh position={[0, 0.9, z]} rotation-y={z < 0 ? Math.PI : 0}>
+                        <planeGeometry args={[4.2, 0.16]} />
+                        <meshLambertMaterial color="#EF9F27" />
+                    </mesh>
+                    {/* open side windows */}
+                    <mesh position={[-0.2, 1.62, z * 1.002]} rotation-y={z < 0 ? Math.PI : 0}>
+                        <planeGeometry args={[3.6, 0.45]} />
+                        <meshLambertMaterial color="#2C2C2A" />
+                    </mesh>
+                </group>
+            ))}
             <mesh position={[-0.2, 2.0, 0]}>
-                <boxGeometry args={[4.4, 0.15, 2.1]} />
+                <boxGeometry args={[4.6, 0.15, 2.15]} />
                 <meshLambertMaterial color="#185FA5" />
             </mesh>
-            <mesh position={[2.7, 0.85, 0]}>
-                <boxGeometry args={[0.8, 0.9, 1.8]} />
-                <meshLambertMaterial color="#B4B2A9" flatShading />
+            {/* hood, chrome grille and the silver horse on the bonnet */}
+            <mesh position={[2.65, 0.9, 0]}>
+                <boxGeometry args={[0.95, 0.9, 1.8]} />
+                <meshLambertMaterial color="#D3D1C7" flatShading />
             </mesh>
-            {[[-1.6, 1], [1.6, 1], [-1.6, -1], [1.6, -1]].map(([x, z], i) => (
+            <mesh position={[3.13, 0.85, 0]}>
+                <boxGeometry args={[0.05, 0.6, 1.3]} />
+                <meshLambertMaterial color="#F1EFE8" />
+            </mesh>
+            <mesh position={[2.9, 1.5, 0]}>
+                <coneGeometry args={[0.12, 0.45, 4]} />
+                <meshLambertMaterial color="#F1EFE8" />
+            </mesh>
+            {[[-1.4, 1], [1.6, 1], [-1.4, -1], [1.6, -1]].map(([x, z], i) => (
                 <mesh key={i} position={[x, 0.4, z]} rotation-x={Math.PI / 2}>
                     <cylinderGeometry args={[0.4, 0.4, 0.3, 10]} />
                     <meshLambertMaterial color="#2C2C2A" />
@@ -389,7 +447,7 @@ function Terminal() {
                 <boxGeometry args={[4, 0.15, 0.6]} />
                 <meshLambertMaterial color="#854F0B" />
             </mesh>
-            <group position={[6, 0, 0.5]}>
+            <group position={[6.2, 0, 0.5]}>
                 <Jeepney />
             </group>
         </group>
@@ -399,35 +457,14 @@ function Terminal() {
 function TownView({ town }: { town: TownLayout }) {
     const [cx, cz] = town.center;
     return (
-        <group position={[cx, 0, cz]}>
-            {town.streets.map(([x, z, w, d], i) => (
-                <mesh key={i} rotation-x={-Math.PI / 2} position={[x, 0.045, z]}>
-                    <planeGeometry args={[w, d]} />
-                    <meshLambertMaterial color="#C9C2AE" />
-                </mesh>
-            ))}
-            <mesh rotation-x={-Math.PI / 2} position-y={0.06}>
-                <circleGeometry args={[town.plazaRadius, 24]} />
-                <meshLambertMaterial color="#F1EFE8" />
-            </mesh>
-            <Fountain />
-            {town.houses.map(([x, z, w, h, d, wall, roof], i) => (
-                <group key={i} position={[x, 0, z]}>
-                    <mesh position-y={h / 2}>
-                        <boxGeometry args={[w, h, d]} />
-                        <meshLambertMaterial color={wall} flatShading />
-                    </mesh>
-                    <Roof w={w + 0.6} d={d + 0.6} h={1.6} color={roof} y={h} />
-                    <mesh position={[0, 0.9, d / 2 + 0.01]}>
-                        <planeGeometry args={[0.9, 1.8]} />
-                        <meshLambertMaterial color="#444441" />
-                    </mesh>
-                </group>
-            ))}
-            <group position={[town.terminal[0], 0, town.terminal[1]]}>
-                <Terminal />
+        <Near x={cx} z={cz} range={360}>
+            <group position={[cx + town.terminal[0], 0, cz + town.terminal[1]]}>
+                <Shadowed>
+                    <Terminal />
+                </Shadowed>
+                <Label text="JEEPNEY" position={[0, 4.4, 0]} height={1.1} size={40} color="#FFFFFF" stroke="#993C1D" bg="rgba(216,90,48,0.92)" />
             </group>
-        </group>
+        </Near>
     );
 }
 

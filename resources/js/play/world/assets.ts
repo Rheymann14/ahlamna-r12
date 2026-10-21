@@ -8,15 +8,17 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
  *
  *   {
  *     "characters": { "player": "characters/player.glb", "loc_health_center": "characters/nurse.glb" },
- *     "buildings":  { "loc_school": "buildings/school.glb" }
+ *     "buildings":  { "loc_school": "buildings/school.glb" },
+ *     "landmarks":  { "koronadal-city-hall": "landmarks/koronadal-city-hall.glb" }
  *   }
  *
- * Keys are "player", "npc_default", or a location slug. Anything not listed keeps the built-in placeholder,
+ * Keys are "player", "npc_default", a location slug, or a landmark slug (world/landmarks.ts). Anything not listed keeps the built-in placeholder,
  * so the game always works while art is still being made. See docs/ART_PIPELINE.md.
  */
 export type ModelManifest = {
     characters?: Record<string, string>;
     buildings?: Record<string, string>;
+    landmarks?: Record<string, string>;
 };
 
 export type LoadedModel = { scene: Object3D; animations: AnimationClip[] };

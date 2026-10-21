@@ -3,14 +3,14 @@
  *
  * Outlines are hand-traced approximations of the provinces (good enough to recognise the region,
  * not survey-accurate). They are written in "map pixels" from an 881x571 reference map and converted
- * to world units with toWorld(): Koronadal City is the world origin and 1 map pixel = 2 world units (meters).
+ * to world units with toWorld(): Koronadal City is the world origin and 1 map pixel = 3 world units (meters).
  *
  * Province borders share the exact same points so there are no gaps between neighbours.
  */
 
 export type MapPoint = [number, number];
 
-export const MAP_SCALE = 2;
+export const MAP_SCALE = 3;
 const ORIGIN: MapPoint = [457, 320]; // Koronadal City
 
 export function toWorld([px, py]: MapPoint): [number, number] {
@@ -25,7 +25,7 @@ export function toMap(x: number, z: number): MapPoint {
 const P = {
     A: [250, 262], B: [300, 258], C: [355, 250], D: [392, 232], E: [418, 228],
     F: [445, 255], G: [480, 256], H: [512, 258], I: [540, 262], J: [545, 300],
-    K: [528, 310], L: [505, 318], M: [472, 312], N: [458, 292], O: [432, 285],
+    K: [528, 310], L: [508, 308], M: [478, 298], N: [460, 292], O: [438, 298],
     PP: [408, 298], Q: [400, 322], R: [418, 355], S: [378, 356], T: [340, 350],
     U: [305, 357], V: [338, 398],
     X1: [522, 345], X2: [528, 378], X3: [541, 398],
@@ -38,7 +38,7 @@ export type Province = {
     slug: string; // matches the zone slug in the database
     name: string;
     mapColor: string; // political colour on the minimap
-    groundColor: string; // grass tint in the 3D world
+    groundColor: string; // grass tint in the 3D world (and on the minimap)
     outline: MapPoint[];
     labelAt: MapPoint;
 };
@@ -48,7 +48,7 @@ export const PROVINCES: Province[] = [
         slug: 'general-santos',
         name: 'General Santos City',
         mapColor: '#F0997B',
-        groundColor: '#C9C7A8',
+        groundColor: '#A9D98A',
         outline: [P.X3, P.G1, P.G2, P.G3, P.G4],
         labelAt: [526, 410],
     },
@@ -56,7 +56,7 @@ export const PROVINCES: Province[] = [
         slug: 'south-cotabato',
         name: 'South Cotabato',
         mapColor: '#5DCAA5',
-        groundColor: '#97C459',
+        groundColor: '#8ED36A',
         outline: [P.U, P.T, P.S, P.R, P.Q, P.PP, P.O, P.N, P.M, P.L, P.K, P.J, P.X1, P.X2, P.X3, P.G1, P.G2, P.Y3, P.Y2, P.Y1, P.V],
         labelAt: [470, 370],
     },
@@ -64,7 +64,7 @@ export const PROVINCES: Province[] = [
         slug: 'sultan-kudarat',
         name: 'Sultan Kudarat',
         mapColor: '#AFA9EC',
-        groundColor: '#A5C46E',
+        groundColor: '#89CF66',
         outline: [
             P.A, P.B, P.C, P.D, P.E, P.F, P.G, P.H, P.I, P.J, P.K, P.L, P.M, P.N, P.O, P.PP, P.Q, P.R, P.S, P.T, P.U, P.V,
             [310, 385], [285, 365], [266, 335], [254, 300],
@@ -75,7 +75,7 @@ export const PROVINCES: Province[] = [
         slug: 'sarangani',
         name: 'Sarangani',
         mapColor: '#F09595',
-        groundColor: '#B0CC72',
+        groundColor: '#94D672',
         // West coastal strip (Kiamba, Maitum, Maasim) joined to the east side of Sarangani Bay (Alabel, Glan)
         // through General Santos' coast so it stays one walkable piece.
         outline: [
@@ -87,7 +87,7 @@ export const PROVINCES: Province[] = [
         slug: 'sarangani',
         name: 'Sarangani',
         mapColor: '#F09595',
-        groundColor: '#B0CC72',
+        groundColor: '#94D672',
         outline: [
             P.J, P.W1, P.W2, [616, 338], [630, 352], [620, 388], [632, 440], [614, 500], [598, 540], P.W9, [568, 520],
             [574, 470], [562, 432], P.G4, P.X3, P.X2, P.X1,
@@ -98,7 +98,7 @@ export const PROVINCES: Province[] = [
         slug: 'cotabato',
         name: 'Cotabato',
         mapColor: '#97C459',
-        groundColor: '#8DBA55',
+        groundColor: '#82C860',
         outline: [
             P.E, [425, 200], [415, 165], [395, 195], [372, 182], [350, 150], [332, 138], [348, 118], [352, 80], [350, 40],
             [378, 15], [408, 18], [440, 45], [470, 58], [505, 72], [548, 48], [565, 45], [555, 100], [548, 140], [572, 160],
@@ -150,20 +150,32 @@ export type Town = {
 
 export const TOWNS: Town[] = [
     { slug: 'koronadal', name: 'Koronadal City', province: 'south-cotabato', at: [457, 320] },
-    { slug: 'lake-sebu', name: 'Lake Sebu', province: 'south-cotabato', at: [432, 380] },
-    { slug: 'general-santos', name: 'General Santos City', province: 'general-santos', at: [532, 410] },
+    { slug: 'tacurong', name: 'Tacurong City', province: 'sultan-kudarat', at: [428, 293] },
     { slug: 'isulan', name: 'Isulan', province: 'sultan-kudarat', at: [396, 287] },
+    { slug: 'lake-sebu', name: 'Lake Sebu', province: 'south-cotabato', at: [432, 380] },
+    { slug: 'polomolok', name: 'Polomolok', province: 'south-cotabato', at: [495, 376] },
+    { slug: 'general-santos', name: 'General Santos City', province: 'general-santos', at: [532, 410] },
     { slug: 'alabel', name: 'Alabel', province: 'sarangani', at: [572, 420] },
+    { slug: 'glan', name: 'Glan', province: 'sarangani', at: [590, 505] },
+    { slug: 'kiamba', name: 'Kiamba', province: 'sarangani', at: [440, 448] },
     { slug: 'kidapawan', name: 'Kidapawan City', province: 'cotabato', at: [520, 190] },
+    { slug: 'kabacan', name: 'Kabacan', province: 'cotabato', at: [478, 112] },
 ];
 
-/** Roads between towns, as map-pixel polylines. */
-export const ROAD_LINES: MapPoint[][] = [
-    [[457, 320], [430, 302], [396, 287]], // Koronadal - Isulan
-    [[457, 320], [446, 350], [432, 380]], // Koronadal - Lake Sebu
-    [[457, 320], [480, 350], [500, 380], [532, 410]], // Koronadal - Tupi - Polomolok - GenSan
-    [[532, 410], [552, 413], [572, 420]], // GenSan - Alabel
-    [[457, 320], [470, 290], [482, 258], [500, 222], [520, 190]], // Koronadal - Tacurong side - Kidapawan
+export type RoadLine = { name: string; kind: 'highway' | 'road'; points: MapPoint[] };
+
+/** The road network between towns, as map-pixel polylines. Lines meet at shared points (the town centres). */
+export const ROAD_LINES: RoadLine[] = [
+    { name: 'Koronadal–General Santos Highway', kind: 'highway', points: [[457, 320], [468, 334], [478, 350], [486, 364], [495, 376], [510, 392], [522, 402], [532, 410]] },
+    { name: 'Koronadal–Isulan Highway', kind: 'highway', points: [[457, 320], [442, 306], [428, 293], [412, 292], [396, 287]] },
+    { name: 'Koronadal–Kidapawan Highway', kind: 'highway', points: [[457, 320], [457, 304], [466, 292], [478, 276], [484, 258], [498, 228], [510, 205], [520, 190]] },
+    { name: 'General Santos–Glan Road', kind: 'highway', points: [[532, 410], [552, 414], [572, 420], [578, 440], [580, 462], [579, 484], [590, 505]] },
+    { name: 'Koronadal–Lake Sebu Road', kind: 'road', points: [[457, 320], [452, 336], [447, 348], [440, 364], [432, 380]] },
+    { name: 'Lake Sebu–Kiamba Road', kind: 'road', points: [[432, 380], [436, 400], [440, 425], [440, 448]] },
+    { name: 'Sarangani Coastal Road', kind: 'road', points: [[532, 410], [518, 418], [512, 432], [500, 452], [484, 462], [462, 458], [440, 448], [415, 440], [392, 428]] },
+    { name: 'Isulan–Lebak Road', kind: 'road', points: [[396, 287], [372, 288], [340, 300], [306, 310], [278, 318]] },
+    { name: 'Kidapawan–Kabacan Road', kind: 'road', points: [[520, 190], [506, 162], [490, 132], [478, 112]] },
+    { name: 'Lake Agco Road', kind: 'road', points: [[520, 190], [530, 186], [538, 183]] },
 ];
 
 /** Lakes and mountains: positions and radii in map pixels; height in world units. */
@@ -172,9 +184,20 @@ export const LAKES: { name: string; at: MapPoint; rx: number; rz: number }[] = [
     { name: 'Lake Buluan', at: [462, 268], rx: 15, rz: 8 },
 ];
 
-export const MOUNTAINS: { name: string; at: MapPoint; radius: number; height: number }[] = [
-    { name: 'Mt. Matutum', at: [515, 352], radius: 14, height: 45 },
-    { name: 'Mt. Apo', at: [566, 160], radius: 30, height: 90 },
+export const MOUNTAINS: { name: string; at: MapPoint; radius: number; height: number; snow?: boolean }[] = [
+    { name: 'Mt. Matutum', at: [515, 352], radius: 14, height: 62 },
+    { name: 'Mt. Apo', at: [566, 160], radius: 30, height: 125, snow: true },
+    { name: 'Mt. Parker', at: [395, 368], radius: 10, height: 40 },
+];
+
+/** Farm fields painted on the ground: centre in map pixels, size in meters, rotation in radians. */
+export const FIELDS: { kind: 'rice' | 'pineapple'; at: MapPoint; size: [number, number]; rot: number }[] = [
+    { kind: 'rice', at: [440, 250], size: [60, 36], rot: 0.1 },
+    { kind: 'rice', at: [368, 312], size: [54, 40], rot: -0.2 },
+    { kind: 'rice', at: [345, 280], size: [64, 40], rot: 0.15 },
+    { kind: 'rice', at: [455, 195], size: [50, 36], rot: 0.3 },
+    { kind: 'pineapple', at: [478, 392], size: [56, 40], rot: 0.5 },
+    { kind: 'pineapple', at: [508, 375], size: [40, 30], rot: -0.4 },
 ];
 
 export function pointInPolygon(x: number, y: number, poly: MapPoint[]): boolean {
@@ -193,7 +216,7 @@ export function provinceAt(x: number, z: number): Province | null {
     return PROVINCES.find((p) => pointInPolygon(px, py, p.outline)) ?? null;
 }
 
-export function nearestTown(x: number, z: number, within = 60): Town | null {
+export function nearestTown(x: number, z: number, within = 90): Town | null {
     let best: Town | null = null;
     let bestD = within;
     for (const t of TOWNS) {

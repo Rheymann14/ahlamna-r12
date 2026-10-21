@@ -1,12 +1,14 @@
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
-import { MathUtils, PerspectiveCamera, Vector3, type Group } from 'three';
+import { MathUtils, PerspectiveCamera, Vector3, type Group, type Mesh, type MeshBasicMaterial } from 'three';
 import { cameraRig, rotateCamera, zoomCamera } from '../camera';
 import { cameraInput, input, isRunning, moveVector } from '../input';
 import { isPaused, playerState, useGame } from '../store';
 import { Character } from './Character';
+import { LANDMARKS, LANDMARK_KINDS, landmarkWorld } from './landmarks';
 import { PLAYER_SPAWN, type CollisionWorld } from './layout';
 import { nearestTown, provinceAt } from './region';
+import { Shadowed } from './Scenery';
 
 const WALK_SPEED = 7;
 const RUN_SPEED = 13;
@@ -17,14 +19,42 @@ const PLAYER_COLORS = { skin: '#C68B59', hair: '#2C2C2A', shirt: '#D85A30', pant
 
 export type Spot = { slug: string; x: number; z: number };
 
+/** Pokémon GO-style rings under the player: a steady ring and a pulse that keeps expanding. */
+function PlayerRing() {
+    const pulse = useRef<Mesh>(null);
+    useFrame(({ clock }) => {
+        if (!pulse.current) return;
+        const t = (clock.elapsedTime * 0.7) % 1;
+        pulse.current.scale.setScalar(1 + t * 3);
+        (pulse.current.material as MeshBasicMaterial).opacity = 0.55 * (1 - t);
+    });
+    return (
+        <group position-y={0.14}>
+            <mesh rotation-x={-Math.PI / 2}>
+                <ringGeometry args={[0.85, 1.05, 40]} />
+                <meshBasicMaterial color="#FFFFFF" transparent opacity={0.9} depthWrite={false} />
+            </mesh>
+            <mesh ref={pulse} rotation-x={-Math.PI / 2}>
+                <ringGeometry args={[0.9, 1.0, 40]} />
+                <meshBasicMaterial color="#4FC3F7" transparent depthWrite={false} />
+            </mesh>
+            <mesh rotation-x={-Math.PI / 2}>
+                <ringGeometry args={[TALK_DISTANCE - 0.1, TALK_DISTANCE, 56]} />
+                <meshBasicMaterial color="#FFFFFF" transparent opacity={0.22} depthWrite={false} />
+            </mesh>
+        </group>
+    );
+}
+
 export function PlayerController({ world, spots, unlockLevels }: { world: CollisionWorld; spots: Spot[]; unlockLevels: Record<string, number> }) {
     const group = useRef<Group>(null);
+    const body = useRef<Group>(null);
     const pos = useRef<[number, number]>([...PLAYER_SPAWN]);
     const speed = useRef(0);
-    const lastLockToast = useRef(-10);
     const lookAt = useRef(new Vector3(PLAYER_SPAWN[0], 1, PLAYER_SPAWN[1]));
     const camPos = useRef(new Vector3());
     const areaCheck = useRef(0);
+    const lastProvince = useRef<string | null>(null);
 
     useFrame(({ camera, clock }, delta) => {
         const dt = Math.min(delta, 0.05);
@@ -55,19 +85,13 @@ export function PlayerController({ world, spots, unlockLevels }: { world: Collis
             const wx = mv.x * cos + mv.z * sin;
             const wz = -mv.x * sin + mv.z * cos;
             const [x, z] = pos.current;
-            const { pos: next, hit } = world.move(x, z, wx * targetSpeed * dt, wz * targetSpeed * dt, RADIUS);
-            pos.current = next;
+            pos.current = world.move(x, z, wx * targetSpeed * dt, wz * targetSpeed * dt, RADIUS).pos;
 
-            if (hit && typeof hit === 'object' && clock.elapsedTime - lastLockToast.current > 4) {
-                lastLockToast.current = clock.elapsedTime;
-                game.flash(`${hit.locked.name} opens at level ${unlockLevels[hit.locked.slug] ?? '?'}. Keep doing quests!`);
-            }
-
-            if (group.current) {
+            if (body.current) {
                 const target = Math.atan2(wx, wz);
-                let diff = target - group.current.rotation.y;
+                let diff = target - body.current.rotation.y;
                 diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-                group.current.rotation.y += diff * Math.min(1, dt * 12);
+                body.current.rotation.y += diff * Math.min(1, dt * 12);
             }
         }
 
@@ -75,7 +99,7 @@ export function PlayerController({ world, spots, unlockLevels }: { world: Collis
         group.current?.position.set(px, 0, pz);
         playerState.x = px;
         playerState.z = pz;
-        playerState.heading = group.current?.rotation.y ?? 0;
+        playerState.heading = body.current?.rotation.y ?? 0;
         playerState.cameraYaw = cameraRig.yaw;
 
         // Orbit camera.
@@ -117,16 +141,37 @@ export function PlayerController({ world, spots, unlockLevels }: { world: Collis
             }
         }
 
-        // Province / town name for the HUD, a few times a second.
+        // A few times a second: where am I, and am I at a landmark?
         if (clock.elapsedTime - areaCheck.current > 0.3) {
             areaCheck.current = clock.elapsedTime;
-            game.setArea(provinceAt(px, pz)?.name ?? null, nearestTown(px, pz)?.name ?? null);
+            const province = provinceAt(px, pz);
+            game.setArea(province?.name ?? null, nearestTown(px, pz)?.name ?? null);
+
+            if (province && province.slug !== lastProvince.current) {
+                if (lastProvince.current) {
+                    const zone = game.zones.find((z) => z.slug === province.slug);
+                    game.flash(zone?.locked ? `Welcome to ${province.name}! Quests here open at level ${unlockLevels[province.slug] ?? '?'}.` : `Welcome to ${province.name}!`);
+                }
+                lastProvince.current = province.slug;
+            }
+
+            const landmark = LANDMARKS.find((l) => {
+                const [lx, lz] = landmarkWorld(l);
+                return Math.hypot(lx - px, lz - pz) < LANDMARK_KINDS[l.kind].radius + 6;
+            });
+            game.setNearLandmark(landmark?.slug ?? null);
+            if (landmark && game.visit(landmark.slug)) game.flash(`New place discovered: ${landmark.name}!`);
         }
     });
 
     return (
         <group ref={group} position={[PLAYER_SPAWN[0], 0, PLAYER_SPAWN[1]]}>
-            <Character modelKey="player" colors={PLAYER_COLORS} speed={speed} />
+            <PlayerRing />
+            <group ref={body}>
+                <Shadowed>
+                    <Character modelKey="player" colors={PLAYER_COLORS} speed={speed} />
+                </Shadowed>
+            </group>
         </group>
     );
 }

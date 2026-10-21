@@ -50,6 +50,15 @@ These are the same steps without animation. Export at real size in meters, with 
 centred on the origin and sitting on the ground. Budget: under 10,000 triangles and 1 MB.
 Put the files in `public/models/buildings/`.
 
+### Landmarks
+
+The "best spots" of the region (Koronadal Roundabout, Koronadal City Hall, Regional Prime Center,
+GenSan Fish Port, Seven Falls, and so on) are built in code in `resources/js/play/world/LandmarkModels.tsx`.
+A Blender model replaces one the same way: export it facing **+Z**, centred on the origin at real size,
+put it in `public/models/landmarks/`, and list it under `landmarks` using the landmark slug from
+`resources/js/play/world/landmarks.ts`. Keep it inside the landmark's footprint there (its collision boxes),
+or the player will walk through walls. Budget: under 20,000 triangles and 2 MB.
+
 ## The manifest
 
 `public/models/manifest.json` says which model to use where. The keys are:
@@ -70,6 +79,9 @@ Put the files in `public/models/buildings/`.
     "buildings": {
         "loc_school": "buildings/school.glb",
         "loc_health_center": "buildings/health-center.glb"
+    },
+    "landmarks": {
+        "koronadal-city-hall": "landmarks/koronadal-city-hall.glb"
     }
 }
 ```

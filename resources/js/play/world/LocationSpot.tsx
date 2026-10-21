@@ -6,7 +6,7 @@ import { useModel } from './assets';
 import type { AvatarColors } from './Avatar';
 import { Character } from './Character';
 import { BUILDINGS, DEFAULT_BUILDING, npcSpot } from './layout';
-import { Roof } from './Scenery';
+import { Near, Roof, Shadowed } from './Scenery';
 
 const NPC_COLORS: Record<string, AvatarColors> = {
     loc_school: { skin: '#C68B59', hair: '#2C2C2A', shirt: '#185FA5', pants: '#444441' },
@@ -24,6 +24,8 @@ const FALLBACK_COLORS: AvatarColors = { skin: '#C68B59', hair: '#2C2C2A', shirt:
 
 export type MarkerState = 'new' | 'done' | 'locked';
 
+const MARKER_COLORS: Record<MarkerState, string> = { new: '#EF9F27', done: '#1D9E75', locked: '#888780' };
+
 function Marker({ state }: { state: MarkerState }) {
     const ref = useRef<Group>(null);
     useFrame(({ clock }) => {
@@ -32,7 +34,7 @@ function Marker({ state }: { state: MarkerState }) {
         ref.current.rotation.y = clock.elapsedTime * 1.5;
     });
 
-    const color = state === 'new' ? '#EF9F27' : state === 'done' ? '#1D9E75' : '#888780';
+    const color = MARKER_COLORS[state];
 
     return (
         <group ref={ref}>
@@ -131,16 +133,23 @@ export function LocationSpot({ location, marker }: { location: WorldLocation; ma
     });
 
     return (
-        <group>
-            <group position={[x, 0, z]}>
-                <Building slug={location.slug} />
-            </group>
-            <group position={[nx, 0, nz]}>
-                <group ref={npc}>
+        <Near x={x} z={z} range={300}>
+            <Shadowed>
+                <group position={[x, 0, z]}>
+                    <Building slug={location.slug} />
+                </group>
+                <group position={[nx, 0, nz]} ref={npc}>
                     <Character modelKey={location.slug} fallbackKey="npc_default" colors={NPC_COLORS[location.slug] ?? FALLBACK_COLORS} speed={idle} />
                 </group>
+            </Shadowed>
+            <group position={[nx, 0, nz]}>
                 <Marker state={marker} />
+                {/* quest spot ring, like a stop's interaction radius */}
+                <mesh rotation-x={-Math.PI / 2} position-y={0.13}>
+                    <ringGeometry args={[2.6, 3.0, 40]} />
+                    <meshBasicMaterial color={MARKER_COLORS[marker]} transparent opacity={0.55} depthWrite={false} />
+                </mesh>
             </group>
-        </group>
+        </Near>
     );
 }

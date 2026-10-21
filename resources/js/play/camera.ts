@@ -5,9 +5,9 @@
  * pitch:    angle above the ground, in radians
  * distance: meters from the player
  */
-export const DEFAULT_CAMERA = { yaw: 0, pitch: 0.85, distance: 24 };
+export const DEFAULT_CAMERA = { yaw: 0, pitch: 0.5, distance: 26 };
 
-export const LIMITS = { minPitch: 0.3, maxPitch: 1.4, minDistance: 8, maxDistance: 70 };
+export const LIMITS = { minPitch: 0.2, maxPitch: 1.4, minDistance: 8, maxDistance: 80 };
 
 export const cameraRig = { ...DEFAULT_CAMERA };
 

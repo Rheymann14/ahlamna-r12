@@ -12,8 +12,9 @@ use Illuminate\Database\Seeder;
 /**
  * Starter world: Region XII's provinces as zones, an NPC in each main town, and five quests.
  *
- * Positions are world meters with Koronadal City at (0, 0); 1 pixel on the reference map = 2 m
- * (see resources/js/play/world/region.ts, which uses the same conversion).
+ * Positions are world meters with Koronadal City at (0, 0); 1 pixel on the reference map = 3 m
+ * (see resources/js/play/world/region.ts, which uses the same conversion). Buildings sit beside the
+ * roads and landmarks laid out in resources/js/play/world/landmarks.ts.
  *
  * NOTE: The questions below are SAMPLE content for development. They must go through
  * medical/content review (e.g. DOH CHD XII, CPD XII) before being used with real players.
@@ -23,7 +24,7 @@ class WorldSeeder extends Seeder
     /** Map pixel -> world meters (Koronadal City is the origin). */
     private static function world(float $px, float $py): array
     {
-        return [($px - 457) * 2, ($py - 320) * 2];
+        return [($px - 457) * 3, ($py - 320) * 3];
     }
 
     public function run(): void
@@ -67,15 +68,15 @@ class WorldSeeder extends Seeder
 
         // [zone, topic, slug, name, npc, role, greeting, x, z] — x/z is the building's center.
         $locations = [
-            ['south-cotabato', 'puberty', 'loc_school', 'Koronadal National High School', 'Sir Ben', 'Guidance teacher', 'Hello! Growing up comes with lots of questions. Let\'s talk about them.', -16, -10],
-            ['south-cotabato', 'sti-hiv', 'loc_health_center', 'Teen Health Center', 'Ate Nena', 'Nurse', 'Maayong adlaw! Everything you ask here is confidential.', 16, -10],
-            ['south-cotabato', 'health-habits', 'loc_home', 'Bahay ni Lola', 'Lola Pacing', 'Grandmother', 'Come in, iho, iha! A healthy body starts at home.', -16, 12],
-            ['south-cotabato', 'consent', 'loc_plaza', 'Youth Hub at the Plaza', 'Kuya Migs', 'Peer educator', 'Hey! Respect is the coolest thing you can have. Want to test what you know?', 6, 4],
-            ['south-cotabato', 'mental-health', 'loc_lake_sebu', 'Lake Sebu Wellness Spot', 'Inday Lia', 'Youth counselor', 'Breathe in, breathe out. Let\'s take care of your mind today.', $sebuX, $sebuZ - 13],
-            ['general-santos', 'online-safety', 'loc_gensan_port', 'Fish Port Youth Corner', 'Kuya Dodong', 'Youth volunteer', 'Welcome to GenSan! Online, stay as careful as you are at sea.', $gsX, $gsZ - 13],
-            ['sultan-kudarat', 'gender', 'loc_isulan_youth', 'Isulan Youth Center', 'Ma\'am Aisha', 'Youth development officer', 'Assalamu alaikum! Everyone deserves equal respect and chances.', $isX, $isZ - 13],
-            ['sarangani', 'teen-pregnancy', 'loc_alabel_capitol', 'Sarangani Youth Desk', 'Ate Jing', 'Population officer', 'Hello from Alabel! Let\'s talk about planning your future.', $alX, $alZ - 13],
-            ['cotabato', 'substance-use', 'loc_kidapawan_hub', 'Kidapawan Youth Hub', 'Kuya Rey', 'Health educator', 'Fresh air from Mt. Apo! Let\'s keep your lungs and mind healthy.', $kiX, $kiZ - 13],
+            ['south-cotabato', 'puberty', 'loc_school', 'Koronadal National High School', 'Sir Ben', 'Guidance teacher', 'Hello! Growing up comes with lots of questions. Let\'s talk about them.', -50, 30],
+            ['south-cotabato', 'sti-hiv', 'loc_health_center', 'Teen Health Center', 'Ate Nena', 'Nurse', 'Maayong adlaw! Everything you ask here is confidential.', 50, 22],
+            ['south-cotabato', 'health-habits', 'loc_home', 'Bahay ni Lola', 'Lola Pacing', 'Grandmother', 'Come in, iho, iha! A healthy body starts at home.', -36, 50],
+            ['south-cotabato', 'consent', 'loc_plaza', 'Youth Hub at the Plaza', 'Kuya Migs', 'Peer educator', 'Hey! Respect is the coolest thing you can have. Want to test what you know?', 10, 34],
+            ['south-cotabato', 'mental-health', 'loc_lake_sebu', 'Lake Sebu Wellness Spot', 'Inday Lia', 'Youth counselor', 'Breathe in, breathe out. Let\'s take care of your mind today.', $sebuX - 16, $sebuZ - 8],
+            ['general-santos', 'online-safety', 'loc_gensan_port', 'Fish Port Youth Corner', 'Kuya Dodong', 'Youth volunteer', 'Welcome to GenSan! Online, stay as careful as you are at sea.', $gsX - 14, $gsZ + 30],
+            ['sultan-kudarat', 'gender', 'loc_isulan_youth', 'Isulan Youth Center', 'Ma\'am Aisha', 'Youth development officer', 'Assalamu alaikum! Everyone deserves equal respect and chances.', $isX - 24, $isZ - 18],
+            ['sarangani', 'teen-pregnancy', 'loc_alabel_capitol', 'Sarangani Youth Desk', 'Ate Jing', 'Population officer', 'Hello from Alabel! Let\'s talk about planning your future.', $alX - 20, $alZ - 24],
+            ['cotabato', 'substance-use', 'loc_kidapawan_hub', 'Kidapawan Youth Hub', 'Kuya Rey', 'Health educator', 'Fresh air from Mt. Apo! Let\'s keep your lungs and mind healthy.', $kiX - 40, $kiZ + 10],
         ];
 
         foreach ($locations as [$zone, $topic, $slug, $name, $npc, $role, $greeting, $x, $z]) {

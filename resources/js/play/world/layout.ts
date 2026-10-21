@@ -1,11 +1,12 @@
 /**
- * Town layouts, scenery placement and collision for the Region XII world.
+ * Town layouts, roads, scenery placement and collision for the Region XII world.
  * NPC spots come from the database (locations.position_x/z, matched by slug);
- * this file decides how each spot looks and where scenery goes.
+ * landmarks and street plans come from landmarks.ts; this file turns them into world data.
  *
  * Coordinates: x = east, z = south (down the map), y = up. 1 unit ≈ 1 meter. Koronadal is (0, 0).
  */
-import { LAKES, MAP_SCALE, MOUNTAINS, PROVINCES, ROAD_LINES, TOWNS, pointInPolygon, provinceAt, toMap, toWorld, type MapPoint, type Province } from './region';
+import { LANDMARKS, LANDMARK_KINDS, TOWN_PLANS, landmarkPoint, landmarkWorld, type Landmark } from './landmarks';
+import { FIELDS, LAKES, MAP_SCALE, MOUNTAINS, PROVINCES, ROAD_LINES, TOWNS, pointInPolygon, provinceAt, toMap, toWorld, type MapPoint } from './region';
 
 export type Box = { minX: number; maxX: number; minZ: number; maxZ: number };
 export type Circle = { x: number; z: number; r: number };
@@ -19,7 +20,8 @@ export type BuildingStyle = {
     kind: 'house' | 'gazebo' | 'hut';
 };
 
-export const PLAYER_SPAWN: [number, number] = [0, 8];
+/** South of the Koronadal roundabout, beside the plaza. */
+export const PLAYER_SPAWN: [number, number] = [3, 24];
 
 /** Look of each NPC location, keyed by location slug. Unknown slugs fall back to DEFAULT_BUILDING. */
 export const BUILDINGS: Record<string, BuildingStyle> = {
@@ -42,60 +44,19 @@ export function npcSpot(slug: string, position: [number, number]): [number, numb
     return [position[0], position[1] + style.size[2] / 2 + (style.kind === 'gazebo' ? 1.2 : 1.6)];
 }
 
-/** Decorative house: [x, z, w, h, d, wall, roof] in world units. */
-export type House = [number, number, number, number, number, string, string];
-
-const HOUSE_COLORS: [string, string][] = [
-    ['#F5C4B3', '#993C1D'], ['#B5D4F4', '#0C447C'], ['#FAEEDA', '#854F0B'], ['#E1F5EE', '#0F6E56'],
-    ['#FBEAF0', '#993556'], ['#F1EFE8', '#444441'], ['#EAF3DE', '#27500A'], ['#FCEBEB', '#791F1F'],
-];
-
 export type TownLayout = {
     slug: string;
     name: string;
     province: string;
     center: [number, number];
-    plazaRadius: number;
-    houses: House[];
-    streets: [number, number, number, number][]; // [x, z, width, depth], axis-aligned
-    terminal: [number, number]; // jeepney terminal shed position
+    terminal: [number, number]; // jeepney terminal shed, relative to the centre
+    urban: number;
+    roundabout?: number;
 };
 
-function townLayout(slug: string): Omit<TownLayout, 'slug' | 'name' | 'province' | 'center'> {
-    if (slug === 'koronadal') {
-        // The hand-made starting town (NPC buildings come from the database).
-        return {
-            plazaRadius: 7.5,
-            houses: [
-                [-28, -10, 5, 3, 4, ...HOUSE_COLORS[0]], [-28, 2, 5, 3, 4, ...HOUSE_COLORS[1]],
-                [-6, -24, 6, 3.4, 4, ...HOUSE_COLORS[2]], [8, -24, 5, 3, 4, ...HOUSE_COLORS[3]],
-                [28, -10, 5, 3, 4, ...HOUSE_COLORS[4]], [28, 2, 5, 3.2, 4, ...HOUSE_COLORS[5]],
-                [-6, 24, 5, 3, 4, ...HOUSE_COLORS[6]], [-28, 24, 5, 3, 4, ...HOUSE_COLORS[7]],
-            ],
-            streets: [[0, 0, 76, 4], [0, -2, 4, 44]],
-            terminal: [-12, 6],
-        };
-    }
-    // Other towns: a plaza ringed by houses.
-    const houses: House[] = [];
-    const seed = slug.length;
-    for (let i = 0; i < 7; i++) {
-        const angle = (i / 7) * Math.PI * 2 + seed;
-        const r = 20 + (i % 2) * 6;
-        const x = Math.round(Math.cos(angle) * r);
-        const z = Math.round(Math.sin(angle) * r);
-        if (z > 4 && Math.abs(x) < 9) continue; // keep the front of the NPC building clear
-        houses.push([x, z, 5, 3, 4, ...HOUSE_COLORS[(i + seed) % HOUSE_COLORS.length]]);
-    }
-    return { plazaRadius: 9, houses, streets: [[0, 0, 50, 4]], terminal: [-12, 7] };
-}
-
 export const TOWN_LAYOUTS: TownLayout[] = TOWNS.map((t) => {
-    const center = toWorld(t.at);
-    const layout = townLayout(t.slug);
-    // Drop generated houses that would land in a lake or the sea.
-    const houses = layout.houses.filter(([x, z]) => provinceAt(center[0] + x, center[1] + z) && !inLake(center[0] + x, center[1] + z, 4));
-    return { slug: t.slug, name: t.name, province: t.province, center, ...layout, houses };
+    const plan = TOWN_PLANS[t.slug] ?? { terminal: [10, -12], streets: [], urban: 45 };
+    return { slug: t.slug, name: t.name, province: t.province, center: toWorld(t.at), terminal: plan.terminal, urban: plan.urban, roundabout: plan.roundabout };
 });
 
 /** Where the player appears after a jeepney ride. */
@@ -105,19 +66,57 @@ export function townSpawn(slug: string): [number, number] {
     return [town.center[0] + town.terminal[0], town.center[1] + town.terminal[1] + 3.5];
 }
 
-/** Road polylines in world units. */
-export const ROADS: [number, number][][] = ROAD_LINES.map((line) => line.map((p) => toWorld(p)));
+/* ---------------------------------------------------------------- roads */
 
-function distToSegment(px: number, pz: number, [ax, az]: [number, number], [bx, bz]: [number, number]): number {
+export type RoadKind = 'highway' | 'road' | 'street';
+export type Road = { kind: RoadKind; width: number; points: [number, number][] };
+
+export const ROAD_WIDTH: Record<RoadKind, number> = { highway: 8, road: 6.5, street: 5.5 };
+
+/** Highways stop at the outer edge of a roundabout's ring instead of crossing its island. */
+function trimAtRoundabouts(points: [number, number][]): [number, number][] {
+    const out = points.map((p) => [...p] as [number, number]);
+    for (const town of TOWN_LAYOUTS) {
+        if (!town.roundabout) continue;
+        const [cx, cz] = town.center;
+        for (const [end, next] of [[0, 1], [out.length - 1, out.length - 2]]) {
+            if (Math.hypot(out[end][0] - cx, out[end][1] - cz) > 0.01) continue;
+            const dx = out[next][0] - cx;
+            const dz = out[next][1] - cz;
+            const len = Math.hypot(dx, dz);
+            out[end] = [cx + (dx / len) * town.roundabout, cz + (dz / len) * town.roundabout];
+        }
+    }
+    return out;
+}
+
+export const ROADS: Road[] = [
+    ...ROAD_LINES.map((line) => ({ kind: line.kind, width: ROAD_WIDTH[line.kind], points: trimAtRoundabouts(line.points.map((p) => toWorld(p))) })),
+    ...TOWN_LAYOUTS.flatMap((town) =>
+        (TOWN_PLANS[town.slug]?.streets ?? []).map((street) => ({
+            kind: 'street' as const,
+            width: ROAD_WIDTH.street,
+            points: street.map(([x, z]) => [town.center[0] + x, town.center[1] + z] as [number, number]),
+        })),
+    ),
+];
+
+export function distToSegment(px: number, pz: number, [ax, az]: [number, number], [bx, bz]: [number, number]): number {
     const dx = bx - ax;
     const dz = bz - az;
     const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz)));
     return Math.hypot(px - (ax + t * dx), pz - (az + t * dz));
 }
 
-function nearRoad(x: number, z: number, margin: number): boolean {
-    return ROADS.some((line) => line.some((p, i) => i > 0 && distToSegment(x, z, line[i - 1], p) < margin));
+/** True when (x, z) is within `margin` meters of a road's edge (or a roundabout ring). */
+export function nearRoad(x: number, z: number, margin: number): boolean {
+    for (const town of TOWN_LAYOUTS) {
+        if (town.roundabout && Math.abs(Math.hypot(x - town.center[0], z - town.center[1]) - town.roundabout) < ROAD_WIDTH.highway / 2 + margin) return true;
+    }
+    return ROADS.some((road) => road.points.some((p, i) => i > 0 && distToSegment(x, z, road.points[i - 1], p) < road.width / 2 + margin));
 }
+
+/* ---------------------------------------------------------------- nature */
 
 export function lakeWorld(lake: (typeof LAKES)[number]) {
     const [x, z] = toWorld(lake.at);
@@ -129,10 +128,34 @@ export function mountainWorld(m: (typeof MOUNTAINS)[number]) {
     return { x, z, r: m.radius * MAP_SCALE, h: m.height };
 }
 
-function inLake(x: number, z: number, pad: number): boolean {
+export function inLake(x: number, z: number, pad: number): boolean {
     return LAKES.some((lake) => {
         const l = lakeWorld(lake);
         return ((x - l.x) / (l.rx + pad)) ** 2 + ((z - l.z) / (l.rz + pad)) ** 2 < 1;
+    });
+}
+
+export type Field = { kind: 'rice' | 'pineapple'; x: number; z: number; w: number; d: number; rot: number };
+
+/** Painted farm fields: the decorative ones from region.ts plus the landmark fields. */
+export const FIELD_PATCHES: Field[] = [
+    ...FIELDS.map((f) => {
+        const [x, z] = toWorld(f.at);
+        return { kind: f.kind, x, z, w: f.size[0], d: f.size[1], rot: f.rot };
+    }),
+    ...LANDMARKS.filter((l) => l.kind === 'fields').map((l) => {
+        const [x, z] = landmarkWorld(l);
+        return { kind: 'pineapple' as const, x, z, w: 40, d: 30, rot: l.rot };
+    }),
+];
+
+function inField(x: number, z: number, pad: number): boolean {
+    return FIELD_PATCHES.some((f) => {
+        const c = Math.cos(f.rot);
+        const s = Math.sin(f.rot);
+        const lx = (x - f.x) * c - (z - f.z) * s;
+        const lz = (x - f.x) * s + (z - f.z) * c;
+        return Math.abs(lx) < f.w / 2 + pad && Math.abs(lz) < f.d / 2 + pad;
     });
 }
 
@@ -165,10 +188,19 @@ function scatter(seed: number, count: number, ok: (x: number, z: number) => bool
     return out;
 }
 
+function nearLandmark(x: number, z: number, pad: number): boolean {
+    return LANDMARKS.some((l) => {
+        const [lx, lz] = landmarkWorld(l);
+        return Math.hypot(lx - x, lz - z) < LANDMARK_KINDS[l.kind].radius + pad;
+    });
+}
+
 function clearOfLandmarks(x: number, z: number, townPad: number): boolean {
     if (!provinceAt(x, z)) return false;
-    if (nearRoad(x, z, 6)) return false;
+    if (nearRoad(x, z, 2.5)) return false;
     if (inLake(x, z, 6)) return false;
+    if (inField(x, z, 3)) return false;
+    if (nearLandmark(x, z, 4)) return false;
     if (TOWN_LAYOUTS.some((t) => Math.hypot(t.center[0] - x, t.center[1] - z) < townPad)) return false;
     if (MOUNTAINS.some((m) => {
         const w = mountainWorld(m);
@@ -177,31 +209,47 @@ function clearOfLandmarks(x: number, z: number, townPad: number): boolean {
     return true;
 }
 
-export function treePositions(count: number): [number, number, number][] {
-    return scatter(1207, count, (x, z) => clearOfLandmarks(x, z, 42), 3);
+/** Broadleaf, coconut palm or pine. */
+export type TreeKind = 0 | 1 | 2;
+export type Tree = [number, number, number, TreeKind];
+
+/** Coconut palms on the coast and in the lowlands, pines in the Cotabato and Lake Sebu highlands. */
+function treeKind(x: number, z: number, roll: number): TreeKind {
+    const [, py] = toMap(x, z);
+    const coastal = !provinceAt(x + 30, z) || !provinceAt(x - 30, z) || !provinceAt(x, z + 30) || !provinceAt(x, z - 30);
+    if (coastal) return roll < 0.8 ? 1 : 0;
+    const province = provinceAt(x, z)?.slug;
+    if (province === 'cotabato' && py < 230) return roll < 0.5 ? 2 : 0;
+    if (province === 'sarangani' || province === 'general-santos') return roll < 0.55 ? 1 : 0;
+    return roll < 0.18 ? 1 : 0;
+}
+
+export function treePositions(count: number): Tree[] {
+    const rand = seeded(77);
+    return scatter(1207, count, (x, z) => clearOfLandmarks(x, z, 26), 3.2).map(([x, z, s]) => [x, z, s, treeKind(x, z, rand())]);
 }
 
 /** Rolling hills, mostly in the uplands of Cotabato and Sultan Kudarat. */
 export function hillPositions(count: number): [number, number, number][] {
     return scatter(4409, count, (x, z) => {
         const p = provinceAt(x, z);
-        return !!p && p.slug !== 'general-santos' && clearOfLandmarks(x, z, 70) && !nearRoad(x, z, 18);
-    }, 24);
+        return !!p && p.slug !== 'general-santos' && clearOfLandmarks(x, z, 90) && !nearRoad(x, z, 22);
+    }, 36);
 }
+
+/* ---------------------------------------------------------------- collision */
 
 /**
  * Collision world: solid boxes, round obstacles (trees, hills, mountains) in a grid for fast lookup,
- * lakes, and which provinces may be entered.
+ * lakes and the sea. Every province can be walked into (free roam); quests stay level-locked on the server.
  */
 export class CollisionWorld {
     private grid = new Map<string, Circle[]>();
     private readonly cell = 12;
+    boxes: Box[];
 
-    constructor(
-        public boxes: Box[],
-        circles: Circle[],
-        private lockedProvinces: Set<string>,
-    ) {
+    constructor(boxes: Box[], circles: Circle[]) {
+        this.boxes = boxes;
         for (const c of circles) {
             const minCx = Math.floor((c.x - c.r) / this.cell);
             const maxCx = Math.floor((c.x + c.r) / this.cell);
@@ -218,11 +266,9 @@ export class CollisionWorld {
         }
     }
 
-    /** Null if the spot is free; otherwise why it is blocked ("locked" carries the province). */
-    blocked(x: number, z: number, radius: number): null | 'solid' | 'water' | { locked: Province } {
-        const province = provinceAt(x, z);
-        if (!province) return 'water';
-        if (this.lockedProvinces.has(province.slug)) return { locked: province };
+    /** Null if the spot is free; otherwise why it is blocked. */
+    blocked(x: number, z: number, radius: number): null | 'solid' | 'water' {
+        if (!provinceAt(x, z)) return 'water';
         if (inLake(x, z, radius)) return 'water';
 
         for (const b of this.boxes) {
@@ -258,44 +304,64 @@ function boxAround(x: number, z: number, w: number, d: number, pad = 0): Box {
     return { minX: x - w / 2 - pad, maxX: x + w / 2 + pad, minZ: z - d / 2 - pad, maxZ: z + d / 2 + pad };
 }
 
-export function buildCollisionWorld(
-    locations: { slug: string; position: [number, number] }[],
-    trees: [number, number, number][],
-    hills: [number, number, number][],
-    lockedProvinces: Set<string>,
-): CollisionWorld {
+/** A landmark's solid parts in world space (boxes become the axis-aligned box around them). */
+export function landmarkSolids(l: Landmark): { boxes: Box[]; circles: Circle[] } {
+    const kind = LANDMARK_KINDS[l.kind];
+    const c = Math.abs(Math.cos(l.rot));
+    const s = Math.abs(Math.sin(l.rot));
+    return {
+        boxes: kind.boxes.map(([x, z, w, d]) => {
+            const [wx, wz] = landmarkPoint(l, x, z);
+            return boxAround(wx, wz, w * c + d * s, w * s + d * c);
+        }),
+        circles: kind.circles.map(([x, z, r]) => {
+            const [wx, wz] = landmarkPoint(l, x, z);
+            return { x: wx, z: wz, r };
+        }),
+    };
+}
+
+/** Solid boxes of an NPC building. */
+export function buildingBoxes(slug: string, [x, z]: [number, number]): Box[] {
+    const style = BUILDINGS[slug] ?? DEFAULT_BUILDING;
+    const [w, , d] = style.size;
+    if (style.kind !== 'gazebo') return [boxAround(x, z, w, d, 0.2)];
+    const hw = w / 2 - 0.3;
+    const hd = d / 2 - 0.3;
+    return [[-hw, -hd], [hw, -hd], [-hw, hd], [hw, hd]].map(([px, pz]) => boxAround(x + px, z + pz, 0.5, 0.5));
+}
+
+/** Terminal shed back wall and the parked jeepney. */
+export function terminalBoxes(town: TownLayout): Box[] {
+    const [cx, cz] = town.center;
+    return [
+        boxAround(cx + town.terminal[0], cz + town.terminal[1] - 1.2, 5, 1.2),
+        boxAround(cx + town.terminal[0] + 6.2, cz + town.terminal[1] + 0.5, 6, 2.2),
+    ];
+}
+
+export function buildCollisionWorld(locations: { slug: string; position: [number, number] }[], trees: Tree[], hills: [number, number, number][]): CollisionWorld {
     const boxes: Box[] = [];
+    const circles: Circle[] = [];
 
-    for (const loc of locations) {
-        const style = BUILDINGS[loc.slug] ?? DEFAULT_BUILDING;
-        const [w, , d] = style.size;
-        if (style.kind === 'gazebo') {
-            const hw = w / 2 - 0.3;
-            const hd = d / 2 - 0.3;
-            for (const [px, pz] of [[-hw, -hd], [hw, -hd], [-hw, hd], [hw, hd]]) boxes.push(boxAround(loc.position[0] + px, loc.position[1] + pz, 0.5, 0.5));
-        } else {
-            boxes.push(boxAround(loc.position[0], loc.position[1], w, d, 0.2));
-        }
+    for (const loc of locations) boxes.push(...buildingBoxes(loc.slug, loc.position));
+    for (const town of TOWN_LAYOUTS) boxes.push(...terminalBoxes(town));
+    for (const l of LANDMARKS) {
+        const solids = landmarkSolids(l);
+        boxes.push(...solids.boxes);
+        circles.push(...solids.circles);
     }
 
-    for (const town of TOWN_LAYOUTS) {
-        const [cx, cz] = town.center;
-        for (const [x, z, w, , d] of town.houses) boxes.push(boxAround(cx + x, cz + z, w, d, 0.2));
-        boxes.push(boxAround(cx, cz, 3.2, 3.2)); // fountain / monument
-        boxes.push(boxAround(cx + town.terminal[0], cz + town.terminal[1] - 1.2, 5, 1.2)); // terminal shed back wall
-        boxes.push(boxAround(cx + town.terminal[0] + 6.2, cz + town.terminal[1] + 0.5, 6, 2.2)); // parked jeepney
-    }
-
-    const circles: Circle[] = [
+    circles.push(
         ...trees.map(([x, z, s]) => ({ x, z, r: 0.45 * s })),
         ...hills.map(([x, z, s]) => ({ x, z, r: 9 * s })),
         ...MOUNTAINS.map((m) => {
             const w = mountainWorld(m);
             return { x: w.x, z: w.z, r: w.r * 0.8 };
         }),
-    ];
+    );
 
-    return new CollisionWorld(boxes, circles, lockedProvinces);
+    return new CollisionWorld(boxes, circles);
 }
 
 /** True if any part of the world-space point is on land inside Region XII. */

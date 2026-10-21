@@ -1,8 +1,9 @@
-import { Award, Bus, Coins, Compass, Flame, Menu, MessageCircle, RotateCcw, RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
+import { Award, Bus, Coins, Compass, Flame, MapPin, Menu, MessageCircle, RotateCcw, RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { resetCamera } from '../camera';
 import { input } from '../input';
 import { allLocations, useGame } from '../store';
+import { CATEGORY_COLORS, LANDMARKS } from '../world/landmarks';
 import { TOWN_LAYOUTS } from '../world/layout';
 import { Joystick } from './Joystick';
 import { Minimap } from './Minimap';
@@ -34,6 +35,7 @@ export function Hud() {
     const player = useGame((s) => s.player);
     const zones = useGame((s) => s.zones);
     const nearSlug = useGame((s) => s.nearSlug);
+    const nearLandmark = useGame((s) => s.nearLandmark);
     const openSlug = useGame((s) => s.openSlug);
     const area = useGame((s) => s.area);
     const toast = useGame((s) => s.toast);
@@ -44,6 +46,7 @@ export function Hud() {
 
     const terminal = nearSlug?.startsWith('terminal:') ? TOWN_LAYOUTS.find((t) => `terminal:${t.slug}` === nearSlug) : null;
     const near = nearSlug && !terminal ? allLocations(zones).find((l) => l.slug === nearSlug) : null;
+    const landmark = nearLandmark ? LANDMARKS.find((l) => l.slug === nearLandmark) : null;
     const span = Math.max(1, player.level_xp_end - player.level_xp_start);
     const pct = Math.min(100, Math.round(((player.xp - player.level_xp_start) / span) * 100));
 
@@ -140,7 +143,20 @@ export function Hud() {
                 </div>
             )}
 
-            {!isTouch && !near && !terminal && (
+            {/* landmark card, like spinning a PokéStop */}
+            {landmark && !near && !terminal && !openSlug && (
+                <div className="absolute bottom-24 left-1/2 flex w-[min(92vw,24rem)] -translate-x-1/2 items-start gap-3 rounded-2xl bg-white/95 p-3 shadow-lg sm:bottom-10">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white shadow" style={{ backgroundColor: CATEGORY_COLORS[landmark.category] }}>
+                        <MapPin size={22} aria-hidden />
+                    </span>
+                    <div className="min-w-0">
+                        <p className="font-black text-stone-800">{landmark.name}</p>
+                        <p className="text-sm leading-snug text-stone-600">{landmark.blurb}</p>
+                    </div>
+                </div>
+            )}
+
+            {!isTouch && !near && !terminal && !landmark && (
                 <p className="absolute bottom-3 left-1/2 hidden -translate-x-1/2 rounded-full bg-black/35 px-3 py-1 text-xs text-white lg:block">
                     WASD to move · Shift to run · drag or Q/E to turn · scroll or Z/X to zoom · C to reset view
                 </p>

@@ -4,6 +4,16 @@ import { api, tokenStore, type Player, type WorldLocation, type Zone } from './a
 export type Quality = 'low' | 'high';
 
 const QUALITY_KEY = 'ahlamna.quality';
+const VISITED_KEY = 'ahlamna.visited';
+
+function loadVisited(): string[] {
+    try {
+        const saved = JSON.parse(localStorage.getItem(VISITED_KEY) ?? '[]');
+        return Array.isArray(saved) ? saved.filter((s) => typeof s === 'string') : [];
+    } catch {
+        return [];
+    }
+}
 
 function detectQuality(): Quality {
     try {
@@ -26,6 +36,10 @@ type GameState = {
     zones: Zone[];
     /** Location slug, or "terminal:<town>" for a jeepney terminal. */
     nearSlug: string | null;
+    /** Landmark the player is standing at (world/landmarks.ts slug). */
+    nearLandmark: string | null;
+    /** Landmarks this device has discovered (shown in colour on the map). */
+    visited: string[];
     openSlug: string | null;
     showBadges: boolean;
     showMenu: boolean;
@@ -42,6 +56,8 @@ type GameState = {
     loadWorld: () => Promise<void>;
     setPlayer: (player: Player) => void;
     setNear: (slug: string | null) => void;
+    setNearLandmark: (slug: string | null) => void;
+    visit: (slug: string) => boolean;
     openLocation: (slug: string | null) => void;
     setShowBadges: (show: boolean) => void;
     setShowMenu: (show: boolean) => void;
@@ -62,6 +78,8 @@ export const useGame = create<GameState>((set, get) => ({
     player: null,
     zones: [],
     nearSlug: null,
+    nearLandmark: null,
+    visited: loadVisited(),
     openSlug: null,
     showBadges: false,
     showMenu: false,
@@ -87,6 +105,24 @@ export const useGame = create<GameState>((set, get) => ({
 
     setNear: (slug) => {
         if (get().nearSlug !== slug) set({ nearSlug: slug });
+    },
+
+    setNearLandmark: (slug) => {
+        if (get().nearLandmark !== slug) set({ nearLandmark: slug });
+    },
+
+    /** Marks a landmark as discovered; true the first time. */
+    visit: (slug) => {
+        const visited = get().visited;
+        if (visited.includes(slug)) return false;
+        const next = [...visited, slug];
+        try {
+            localStorage.setItem(VISITED_KEY, JSON.stringify(next));
+        } catch {
+            // ignore: discoveries just won't be remembered on this device
+        }
+        set({ visited: next });
+        return true;
     },
 
     openLocation: (slug) => set({ openSlug: slug }),
@@ -126,7 +162,7 @@ export const useGame = create<GameState>((set, get) => ({
     logout: async () => {
         await api.logout().catch(() => undefined);
         tokenStore.clear();
-        set({ token: null, player: null, zones: [], openSlug: null, nearSlug: null, showMenu: false, showTravel: false, showMap: false });
+        set({ token: null, player: null, zones: [], openSlug: null, nearSlug: null, nearLandmark: null, showMenu: false, showTravel: false, showMap: false });
     },
 }));
 
