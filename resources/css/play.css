@@ -15,3 +15,13 @@ body {
     font-family: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
     background: #b5d4f4;
 }
+
+/* Fade back in from black after a jeepney or bus ride. */
+@keyframes ride-reveal {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}

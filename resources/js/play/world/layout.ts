@@ -52,17 +52,54 @@ export type TownLayout = {
     terminal: [number, number]; // jeepney terminal shed, relative to the centre
     urban: number;
     roundabout?: number;
+    /** Provincial bus terminal: world centre and rotation (front faces +Z before rot). */
+    bus?: { x: number; z: number; rot: number };
 };
 
 export const TOWN_LAYOUTS: TownLayout[] = TOWNS.map((t) => {
     const plan = TOWN_PLANS[t.slug] ?? { terminal: [10, -12], streets: [], urban: 45 };
-    return { slug: t.slug, name: t.name, province: t.province, center: toWorld(t.at), terminal: plan.terminal, urban: plan.urban, roundabout: plan.roundabout };
+    const center = toWorld(t.at);
+    const bus = plan.bus && { x: center[0] + plan.bus[0], z: center[1] + plan.bus[1], rot: plan.bus[2] };
+    return { slug: t.slug, name: t.name, province: t.province, center, terminal: plan.terminal, urban: plan.urban, roundabout: plan.roundabout, bus };
 });
 
-/** Where the player appears after a jeepney ride. */
-export function townSpawn(slug: string): [number, number] {
+export type TravelMode = 'jeepney' | 'bus';
+
+/** Where the jeepney parks at a town's terminal (it faces east). */
+export function jeepneyBay(town: TownLayout): [number, number] {
+    return [town.center[0] + town.terminal[0] + 6.2, town.center[1] + town.terminal[1] + 0.5];
+}
+
+/**
+ * Bus terminal layout in its own frame (front, where buses park, faces +Z):
+ * a waiting shed along the back, a ticket booth, and two bays along the front curb with buses facing +X.
+ */
+export const BUS_TERMINAL = {
+    size: [30, 18] as [number, number],
+    /** Solid boxes [x, z, w, d]: back wall, ticket booth, shed pillars, benches and the parked buses. */
+    boxes: [
+        [0, -8.4, 28, 0.6], [-11, -5.5, 3.6, 3.2], [-13, 1.2, 0.5, 0.5], [-4.5, 1.2, 0.5, 0.5], [4.5, 1.2, 0.5, 0.5], [13, 1.2, 0.5, 0.5],
+        [-5, -5.6, 4, 0.8], [5, -5.6, 4, 0.8], [6.5, 5.2, 11, 2.6], [-7.5, 5.2, 11, 2.6],
+    ] as [number, number, number, number][],
+    /** Bus bays (bus centre). The first one is the departing bus. */
+    bays: [[6.5, 5.2], [-7.5, 5.2]] as [number, number][],
+    /** Ticket window: where the player talks to get a ride. */
+    spot: [0, -1.5] as [number, number],
+    spawn: [0, 1] as [number, number],
+};
+
+/** A point in a bus terminal's own frame, in the world. */
+export function busPoint(bus: NonNullable<TownLayout['bus']>, x: number, z: number): [number, number] {
+    const c = Math.cos(bus.rot);
+    const s = Math.sin(bus.rot);
+    return [bus.x + x * c + z * s, bus.z - x * s + z * c];
+}
+
+/** Where the player appears after a ride. */
+export function townSpawn(slug: string, mode: TravelMode = 'jeepney'): [number, number] {
     const town = TOWN_LAYOUTS.find((t) => t.slug === slug);
     if (!town) return PLAYER_SPAWN;
+    if (mode === 'bus' && town.bus) return busPoint(town.bus, ...BUS_TERMINAL.spawn);
     return [town.center[0] + town.terminal[0], town.center[1] + town.terminal[1] + 3.5];
 }
 
@@ -149,7 +186,7 @@ export const FIELD_PATCHES: Field[] = [
     }),
 ];
 
-function inField(x: number, z: number, pad: number): boolean {
+export function inField(x: number, z: number, pad: number): boolean {
     return FIELD_PATCHES.some((f) => {
         const c = Math.cos(f.rot);
         const s = Math.sin(f.rot);
@@ -195,8 +232,13 @@ function nearLandmark(x: number, z: number, pad: number): boolean {
     });
 }
 
+function nearBusTerminal(x: number, z: number, pad: number): boolean {
+    return TOWN_LAYOUTS.some((t) => t.bus && Math.hypot(t.bus.x - x, t.bus.z - z) < BUS_TERMINAL.size[0] / 2 + 3 + pad);
+}
+
 function clearOfLandmarks(x: number, z: number, townPad: number): boolean {
     if (!provinceAt(x, z)) return false;
+    if (nearBusTerminal(x, z, 2)) return false;
     if (nearRoad(x, z, 2.5)) return false;
     if (inLake(x, z, 6)) return false;
     if (inField(x, z, 3)) return false;
@@ -250,18 +292,26 @@ export class CollisionWorld {
 
     constructor(boxes: Box[], circles: Circle[]) {
         this.boxes = boxes;
-        for (const c of circles) {
-            const minCx = Math.floor((c.x - c.r) / this.cell);
-            const maxCx = Math.floor((c.x + c.r) / this.cell);
-            const minCz = Math.floor((c.z - c.r) / this.cell);
-            const maxCz = Math.floor((c.z + c.r) / this.cell);
-            for (let cx = minCx; cx <= maxCx; cx++) {
-                for (let cz = minCz; cz <= maxCz; cz++) {
-                    const key = `${cx},${cz}`;
-                    const list = this.grid.get(key);
-                    if (list) list.push(c);
-                    else this.grid.set(key, [c]);
-                }
+        for (const c of circles) this.addCircle(c);
+    }
+
+    /** Adds more solids after the world is built (e.g. props placed by the town life planner). */
+    add(boxes: Box[], circles: Circle[]) {
+        this.boxes.push(...boxes);
+        for (const c of circles) this.addCircle(c);
+    }
+
+    private addCircle(c: Circle) {
+        const minCx = Math.floor((c.x - c.r) / this.cell);
+        const maxCx = Math.floor((c.x + c.r) / this.cell);
+        const minCz = Math.floor((c.z - c.r) / this.cell);
+        const maxCz = Math.floor((c.z + c.r) / this.cell);
+        for (let cx = minCx; cx <= maxCx; cx++) {
+            for (let cz = minCz; cz <= maxCz; cz++) {
+                const key = `${cx},${cz}`;
+                const list = this.grid.get(key);
+                if (list) list.push(c);
+                else this.grid.set(key, [c]);
             }
         }
     }
@@ -331,13 +381,21 @@ export function buildingBoxes(slug: string, [x, z]: [number, number]): Box[] {
     return [[-hw, -hd], [hw, -hd], [-hw, hd], [hw, hd]].map(([px, pz]) => boxAround(x + px, z + pz, 0.5, 0.5));
 }
 
-/** Terminal shed back wall and the parked jeepney. */
+/** Terminal shed back wall and the parked jeepney, plus the bus terminal if the town has one. */
 export function terminalBoxes(town: TownLayout): Box[] {
     const [cx, cz] = town.center;
-    return [
-        boxAround(cx + town.terminal[0], cz + town.terminal[1] - 1.2, 5, 1.2),
-        boxAround(cx + town.terminal[0] + 6.2, cz + town.terminal[1] + 0.5, 6, 2.2),
-    ];
+    const [jx, jz] = jeepneyBay(town);
+    const boxes = [boxAround(cx + town.terminal[0], cz + town.terminal[1] - 1.2, 5, 1.2), boxAround(jx, jz, 6.4, 2.3)];
+    const bus = town.bus;
+    if (bus) {
+        const c = Math.abs(Math.cos(bus.rot));
+        const s = Math.abs(Math.sin(bus.rot));
+        for (const [x, z, w, d] of BUS_TERMINAL.boxes) {
+            const [wx, wz] = busPoint(bus, x, z);
+            boxes.push(boxAround(wx, wz, w * c + d * s, w * s + d * c));
+        }
+    }
+    return boxes;
 }
 
 export function buildCollisionWorld(locations: { slug: string; position: [number, number] }[], trees: Tree[], hills: [number, number, number][]): CollisionWorld {

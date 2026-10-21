@@ -113,6 +113,8 @@ export type TownPlan = {
     urban: number;
     /** A roundabout at the town centre: radius of the ring road's centre line. */
     roundabout?: number;
+    /** Provincial bus terminal: [x, z, rot]. Its front (where the buses park) faces +Z before rot. */
+    bus?: [number, number, number];
 };
 
 const ring = (r: number, sides: number, offset: number): [number, number][] =>
@@ -124,6 +126,7 @@ const ring = (r: number, sides: number, offset: number): [number, number][] =>
 export const TOWN_PLANS: Record<string, TownPlan> = {
     koronadal: {
         terminal: [22, 58],
+        bus: [-50, -14, 0],
         urban: 110,
         roundabout: 12.5,
         streets: [
@@ -134,12 +137,13 @@ export const TOWN_PLANS: Record<string, TownPlan> = {
             [[-22, -36], [-22, -20]], // cathedral driveway
         ],
     },
-    tacurong: { terminal: [10, -14], urban: 55, streets: [[[-10, -22], [-1, 0]]] },
+    tacurong: { terminal: [10, -14], bus: [-19, 17, Math.PI], urban: 55, streets: [[[-10, -22], [-1, 0]]] },
     isulan: { terminal: [8, 16], urban: 55, streets: [[[26, -26], [24, 7]], [[-24, -15], [-24, 1]]] },
     'lake-sebu': { terminal: [14, 10], urban: 45, streets: [[[-30, -32], [-8, -20], [10, -27]]] },
     polomolok: { terminal: [12, -14], urban: 50, streets: [] },
     'general-santos': {
         terminal: [12, -16],
+        bus: [66, -6, 0],
         urban: 70,
         streets: [
             [[5, -36], [5, 0]],
@@ -150,7 +154,7 @@ export const TOWN_PLANS: Record<string, TownPlan> = {
     alabel: { terminal: [-14, 16], urban: 50, streets: [[[20, -28], [20, 5], [0, 0]], [[-20, -21], [-12, -3]]] },
     glan: { terminal: [10, -10], urban: 45, streets: [[[0, 0], [-29, 5]]] },
     kiamba: { terminal: [12, -14], urban: 45, streets: [] },
-    kidapawan: { terminal: [14, 16], urban: 60, streets: [[[-36, -5], [-24, 16], [0, 0]]] },
+    kidapawan: { terminal: [14, 16], bus: [40, -36, 0], urban: 60, streets: [[[-36, -5], [-24, 16], [0, 0]]] },
     kabacan: { terminal: [12, -8], urban: 45, streets: [[[-30, -16], [0, 0]]] },
 };
 

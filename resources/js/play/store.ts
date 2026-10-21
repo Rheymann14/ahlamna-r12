@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, tokenStore, type Player, type WorldLocation, type Zone } from './api';
+import { townSpawn, type TravelMode } from './world/layout';
 
 export type Quality = 'low' | 'high';
 
@@ -30,11 +31,17 @@ function detectQuality(): Quality {
 /** Live player position for the minimap (mutable; updated every frame without re-rendering). */
 export const playerState = { x: 0, z: 0, heading: 0, cameraYaw: 0 };
 
+/** A jeepney or bus ride in progress (the travel cutscene). */
+export type Ride = { mode: TravelMode; from: string; to: string };
+
+/** Live cutscene state for the overlay: 0..1 trip progress and 0..1 black fade (mutable, per frame). */
+export const rideState = { progress: 0, fade: 0 };
+
 type GameState = {
     token: string | null;
     player: Player | null;
     zones: Zone[];
-    /** Location slug, or "terminal:<town>" for a jeepney terminal. */
+    /** Location slug, "terminal:<town>" for a jeepney terminal or "bus:<town>" for a bus terminal. */
     nearSlug: string | null;
     /** Landmark the player is standing at (world/landmarks.ts slug). */
     nearLandmark: string | null;
@@ -47,8 +54,9 @@ type GameState = {
     showMap: boolean;
     /** Where the player is, for the HUD: province name and nearby town. */
     area: { province: string | null; town: string | null };
-    /** Set by the travel menu; consumed by the player controller. */
+    /** Set when a ride ends; consumed by the player controller. */
     teleport: [number, number] | null;
+    ride: Ride | null;
     toast: string | null;
     quality: Quality;
 
@@ -64,7 +72,8 @@ type GameState = {
     setShowTravel: (show: boolean) => void;
     setShowMap: (show: boolean) => void;
     setArea: (province: string | null, town: string | null) => void;
-    travelTo: (spot: [number, number]) => void;
+    startRide: (ride: Ride) => void;
+    endRide: () => void;
     consumeTeleport: () => [number, number] | null;
     flash: (message: string) => void;
     setQuality: (quality: Quality) => void;
@@ -87,6 +96,7 @@ export const useGame = create<GameState>((set, get) => ({
     showMap: false,
     area: { province: null, town: null },
     teleport: null,
+    ride: null,
     toast: null,
     quality: detectQuality(),
 
@@ -136,7 +146,16 @@ export const useGame = create<GameState>((set, get) => ({
         if (a.province !== province || a.town !== town) set({ area: { province, town } });
     },
 
-    travelTo: (spot) => set({ teleport: spot, showTravel: false, showMap: false }),
+    startRide: (ride) => {
+        rideState.progress = 0;
+        rideState.fade = 1;
+        set({ ride, showTravel: false, showMap: false, nearSlug: null });
+    },
+
+    endRide: () => {
+        const ride = get().ride;
+        if (ride) set({ ride: null, teleport: townSpawn(ride.to, ride.mode) });
+    },
 
     consumeTeleport: () => {
         const t = get().teleport;
@@ -162,13 +181,13 @@ export const useGame = create<GameState>((set, get) => ({
     logout: async () => {
         await api.logout().catch(() => undefined);
         tokenStore.clear();
-        set({ token: null, player: null, zones: [], openSlug: null, nearSlug: null, nearLandmark: null, showMenu: false, showTravel: false, showMap: false });
+        set({ token: null, player: null, zones: [], openSlug: null, nearSlug: null, nearLandmark: null, showMenu: false, showTravel: false, showMap: false, ride: null });
     },
 }));
 
 /** True while a panel is open and the world should ignore movement. */
 export function isPaused(s: GameState): boolean {
-    return s.openSlug !== null || s.showBadges || s.showMenu || s.showTravel || s.showMap;
+    return s.openSlug !== null || s.showBadges || s.showMenu || s.showTravel || s.showMap || s.ride !== null;
 }
 
 export function allLocations(zones: Zone[]): (WorldLocation & { zone: Zone })[] {

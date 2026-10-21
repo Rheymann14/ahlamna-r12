@@ -39,12 +39,14 @@ export function Hud() {
     const openSlug = useGame((s) => s.openSlug);
     const area = useGame((s) => s.area);
     const toast = useGame((s) => s.toast);
+    const ride = useGame((s) => s.ride);
     const setShowBadges = useGame((s) => s.setShowBadges);
     const setShowMenu = useGame((s) => s.setShowMenu);
 
-    if (!player) return null;
+    if (!player || ride) return null;
 
-    const terminal = nearSlug?.startsWith('terminal:') ? TOWN_LAYOUTS.find((t) => `terminal:${t.slug}` === nearSlug) : null;
+    const busStop = nearSlug?.startsWith('bus:') ?? false;
+    const terminal = nearSlug && (nearSlug.startsWith('terminal:') || busStop) ? TOWN_LAYOUTS.find((t) => nearSlug.endsWith(`:${t.slug}`)) : null;
     const near = nearSlug && !terminal ? allLocations(zones).find((l) => l.slug === nearSlug) : null;
     const landmark = nearLandmark ? LANDMARKS.find((l) => l.slug === nearLandmark) : null;
     const span = Math.max(1, player.level_xp_end - player.level_xp_start);
@@ -130,7 +132,7 @@ export function Hud() {
             {(near || terminal) && !openSlug && (
                 <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
                     <div className="rounded-xl bg-white/95 px-3 py-1.5 text-center shadow-md">
-                        <p className="text-sm font-bold text-stone-800">{near ? near.npc_name : 'Jeepney terminal'}</p>
+                        <p className="text-sm font-bold text-stone-800">{near ? near.npc_name : busStop ? 'Bus terminal' : 'Jeepney terminal'}</p>
                         <p className="text-xs text-stone-500">{near ? near.name : terminal?.name}</p>
                     </div>
                     <button

@@ -4,11 +4,14 @@ import type { DirectionalLight } from 'three';
 import { bindCameraGestures } from '../camera';
 import { allLocations, playerState, useGame } from '../store';
 import { Landmarks } from './LandmarkModels';
-import { TOWN_LAYOUTS, buildCollisionWorld, hillPositions, npcSpot, treePositions } from './layout';
+import { BUS_TERMINAL, TOWN_LAYOUTS, buildCollisionWorld, busPoint, hillPositions, npcSpot, treePositions } from './layout';
 import { LocationSpot, type MarkerState } from './LocationSpot';
 import { PlayerController, type Spot } from './PlayerController';
+import { RideCutscene } from './RideCutscene';
 import { Clouds, MapLabels, Mountains, Nature, SUN_DIRECTION, Sky, Towns } from './Scenery';
 import { Terrain } from './Terrain';
+import { TownLife, planTownLife } from './TownLife';
+import { Traffic } from './Traffic';
 
 const Effects = lazy(() => import('./Effects'));
 
@@ -69,8 +72,6 @@ export default function GameCanvas() {
     );
     const hills = useMemo(() => hillPositions(high ? 40 : 24), [high]);
 
-    const world = useMemo(() => buildCollisionWorld(locations, trees, hills), [locations, trees, hills]);
-
     const spots = useMemo<Spot[]>(
         () => [
             ...locations.map((l) => {
@@ -78,9 +79,22 @@ export default function GameCanvas() {
                 return { slug: l.slug, x, z };
             }),
             ...TOWN_LAYOUTS.map((t) => ({ slug: `terminal:${t.slug}`, x: t.center[0] + t.terminal[0], z: t.center[1] + t.terminal[1] + 1.5 })),
+            ...TOWN_LAYOUTS.flatMap((t) => {
+                if (!t.bus) return [];
+                const [x, z] = busPoint(t.bus, ...BUS_TERMINAL.spot);
+                return [{ slug: `bus:${t.slug}`, x, z }];
+            }),
         ],
         [locations],
     );
+
+    // Town life (stalls, houses, courts) is planned around everything else, then made solid too.
+    const { world, life } = useMemo(() => {
+        const w = buildCollisionWorld(locations, trees, hills);
+        const plan = planTownLife(w, spots, high);
+        w.add([], plan.circles);
+        return { world: w, life: plan.plans };
+    }, [locations, trees, hills, spots, high]);
 
     const markerFor = (loc: (typeof locations)[number]): MarkerState => {
         if (loc.zone.locked || loc.quests.length === 0 || loc.quests.every((q) => q.locked)) return 'locked';
@@ -107,6 +121,8 @@ export default function GameCanvas() {
                 <Mountains />
                 <Nature trees={trees} hills={hills} />
                 <Towns />
+                <TownLife plans={life} />
+                <Traffic jeepneys={high ? 8 : 4} buses={high ? 3 : 1} />
                 <Landmarks range={high ? 360 : 240} />
                 <MapLabels />
 
@@ -115,6 +131,7 @@ export default function GameCanvas() {
                 ))}
 
                 <PlayerController world={world} spots={spots} unlockLevels={unlockLevels} />
+                <RideCutscene />
 
                 {high && (
                     <Suspense fallback={null}>

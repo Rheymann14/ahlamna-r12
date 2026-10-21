@@ -9,6 +9,7 @@ import { Hud } from './ui/Hud';
 import { MapPanel } from './ui/Minimap';
 import { MenuPanel } from './ui/MenuPanel';
 import { QuestPanel } from './ui/QuestPanel';
+import { RideOverlay } from './ui/RideOverlay';
 
 // three.js + the world only download after login.
 const GameCanvas = lazy(() => import('./world/GameCanvas'));
@@ -66,6 +67,7 @@ export function App() {
                 <GameCanvas />
             </Suspense>
             <Hud />
+            <RideOverlay />
             <QuestPanel />
             <BadgesPanel />
             <MenuPanel />

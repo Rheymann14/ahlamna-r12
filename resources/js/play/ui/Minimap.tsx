@@ -2,7 +2,7 @@ import { Bus, Lock, MapPin, X } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { allLocations, playerState, useGame } from '../store';
 import { CATEGORY_COLORS, LANDMARKS, landmarkWorld } from '../world/landmarks';
-import { ROADS, TOWN_LAYOUTS, townSpawn, type Road } from '../world/layout';
+import { ROADS, TOWN_LAYOUTS, type Road } from '../world/layout';
 import { LAKES, MOUNTAINS, NEIGHBOURS, PROVINCES, TOWNS, toMap } from '../world/region';
 
 // The maps are drawn in the same "map pixel" space as region.ts (1 px = 3 m).
@@ -215,11 +215,21 @@ export function MapPanel() {
     const showTravel = useGame((s) => s.showTravel);
     const setShowMap = useGame((s) => s.setShowMap);
     const setShowTravel = useGame((s) => s.setShowTravel);
-    const travelTo = useGame((s) => s.travelTo);
+    const startRide = useGame((s) => s.startRide);
+    const nearSlug = useGame((s) => s.nearSlug);
     const zones = useGame((s) => s.zones);
     const visited = useGame((s) => s.visited);
 
     if (!show && !showTravel) return null;
+
+    // Which terminal the player is at: "terminal:<town>" (jeepney) or "bus:<town>".
+    const mode = nearSlug?.startsWith('bus:') ? 'bus' : 'jeepney';
+    const here = nearSlug?.split(':')[1] ?? '';
+    const reachable = (slug: string) => slug !== here && (mode === 'jeepney' || !!TOWN_LAYOUTS.find((t) => t.slug === slug)?.bus);
+    const ride = (slug: string) => {
+        if (here && reachable(slug)) startRide({ mode, from: here, to: slug });
+    };
+    const title = !showTravel ? 'Region XII' : mode === 'bus' ? 'Bus terminal' : 'Jeepney terminal';
 
     const locked = new Set(zones.filter((z) => z.locked).map((z) => z.slug));
     const unlockLevel = (slug: string) => zones.find((z) => z.slug === slug)?.unlock_level;
@@ -230,20 +240,24 @@ export function MapPanel() {
     };
 
     return (
-        <div className="absolute inset-0 flex items-end justify-center bg-black/40 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label={showTravel ? 'Jeepney terminal' : 'Region map'}>
+        <div className="absolute inset-0 flex items-end justify-center bg-black/40 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label={showTravel ? title : 'Region map'}>
             <div className="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-amber-50 shadow-2xl ring-4 ring-amber-300 sm:flex-row">
                 <div className="h-[48dvh] shrink-0 bg-sky-300 sm:h-auto sm:w-1/2">
-                    <MapSvg big onTown={showTravel ? (slug) => travelTo(townSpawn(slug)) : undefined} />
+                    <MapSvg big onTown={showTravel ? ride : undefined} />
                 </div>
                 <div className="flex min-h-0 flex-1 flex-col p-5">
                     <div className="mb-3 flex items-center justify-between">
-                        <h2 className="text-xl font-black text-stone-800">{showTravel ? 'Jeepney terminal' : 'Region XII'}</h2>
+                        <h2 className="text-xl font-black text-stone-800">{title}</h2>
                         <button onClick={close} className="rounded-full p-2 text-stone-500 hover:bg-amber-100" aria-label="Close">
                             <X size={22} />
                         </button>
                     </div>
                     <p className="mb-2 text-sm text-stone-600">
-                        {showTravel ? 'Where to? Rides are free.' : 'SOCCSKSARGEN. Walk anywhere, or ride a jeepney from any town terminal.'}
+                        {showTravel
+                            ? mode === 'bus'
+                                ? 'Provincial buses to the big cities. Where to? Rides are free.'
+                                : 'Where to? Rides are free.'
+                            : 'SOCCSKSARGEN. Walk anywhere, or ride a jeepney or bus from a town terminal.'}
                     </p>
                     <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-stone-600">
                         <span className="flex items-center gap-1">
@@ -257,13 +271,14 @@ export function MapPanel() {
                         </span>
                     </div>
                     <div className="min-h-0 space-y-2 overflow-y-auto">
-                        {TOWNS.map((t) => {
+                        {TOWNS.filter((t) => !showTravel || mode === 'jeepney' || reachable(t.slug) || t.slug === here).map((t) => {
                             const province = PROVINCES.find((p) => p.slug === t.province)?.name;
+                            const canGo = showTravel && reachable(t.slug);
                             return (
                                 <button
                                     key={t.slug}
-                                    disabled={!showTravel}
-                                    onClick={() => travelTo(townSpawn(t.slug))}
+                                    disabled={!canGo}
+                                    onClick={() => ride(t.slug)}
                                     className="flex w-full items-center justify-between gap-2 rounded-2xl border-2 border-amber-200 bg-white p-3 text-left transition enabled:hover:border-amber-400 disabled:cursor-default"
                                 >
                                     <span>
@@ -276,7 +291,8 @@ export function MapPanel() {
                                                 <Lock size={14} aria-hidden /> Quests Lv {unlockLevel(t.province)}
                                             </span>
                                         )}
-                                        {showTravel && (
+                                        {showTravel && t.slug === here && <span className="text-xs font-bold text-stone-500">You are here</span>}
+                                        {canGo && (
                                             <span className="flex items-center gap-1 rounded-full bg-amber-500 px-3 py-1 text-sm font-bold text-white">
                                                 <Bus size={14} aria-hidden /> Go
                                             </span>

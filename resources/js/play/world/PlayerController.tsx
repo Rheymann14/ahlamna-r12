@@ -15,7 +15,7 @@ const RUN_SPEED = 13;
 const RADIUS = 0.45;
 const TALK_DISTANCE = 3.5;
 
-const PLAYER_COLORS = { skin: '#C68B59', hair: '#2C2C2A', shirt: '#D85A30', pants: '#0C447C' };
+export const PLAYER_COLORS = { skin: '#C68B59', hair: '#2C2C2A', shirt: '#D85A30', pants: '#0C447C' };
 
 export type Spot = { slug: string; x: number; z: number };
 
@@ -60,6 +60,10 @@ export function PlayerController({ world, spots, unlockLevels }: { world: Collis
         const dt = Math.min(delta, 0.05);
         const game = useGame.getState();
         const paused = isPaused(game);
+
+        // During a ride the cutscene drives the camera and the player is aboard (hidden here).
+        if (group.current) group.current.visible = !game.ride;
+        if (game.ride) return;
 
         const teleport = game.consumeTeleport();
         if (teleport) {
@@ -136,7 +140,7 @@ export function PlayerController({ world, spots, unlockLevels }: { world: Collis
         if (input.interact) {
             input.interact = false;
             if (near && !paused) {
-                if (near.startsWith('terminal:')) game.setShowTravel(true);
+                if (near.startsWith('terminal:') || near.startsWith('bus:')) game.setShowTravel(true);
                 else game.openLocation(near);
             }
         }

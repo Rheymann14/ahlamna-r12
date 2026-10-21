@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, type RefObject } from 'react';
 import { AnimationMixer, Box3, Vector3, type AnimationAction } from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useModel, type LoadedModel } from './assets';
-import { Avatar, type AvatarColors } from './Avatar';
+import { Avatar, type Action, type AvatarColors } from './Avatar';
 
 const TARGET_HEIGHT = 1.8;
 
@@ -16,22 +16,40 @@ type Props = {
     colors: AvatarColors;
     /** Movement speed relative to walking: 0 = standing, 1 = walking, >1.4 = running. */
     speed?: RefObject<number>;
+    /** What the character is doing (wave, phone, sit...). A glTF model plays a clip of the same name if it has one. */
+    action?: RefObject<Action>;
 };
 
 /**
  * A character: the artist's animated glTF model when one is listed in public/models/manifest.json,
  * otherwise the built-in low-poly placeholder.
  */
-export function Character({ modelKey, fallbackKey, colors, speed }: Props) {
+export function Character({ modelKey, fallbackKey, colors, speed, action }: Props) {
     const model = useModel('characters', modelKey, fallbackKey);
-    return model ? <ModelCharacter model={model} speed={speed} /> : <Avatar colors={colors} speed={speed} />;
+    return model ? <ModelCharacter model={model} speed={speed} action={action} /> : <Avatar colors={colors} speed={speed} action={action} />;
 }
 
 function findClip(model: LoadedModel, pattern: RegExp) {
     return model.animations.find((clip) => pattern.test(clip.name));
 }
 
-function ModelCharacter({ model, speed }: { model: LoadedModel; speed?: RefObject<number> }) {
+/** Clip names tried for each action (glTF exports from Mixamo, Blender etc. name them freely). */
+const ACTION_CLIPS: Partial<Record<Action, RegExp>> = {
+    wave: /wave/i,
+    hail: /wave|hail/i,
+    phone: /phone|text/i,
+    talk: /talk/i,
+    chat: /sit.*talk|talk.*sit|sit/i,
+    sit: /sit/i,
+    ride: /sit|drive/i,
+    jump: /jump/i,
+    cheer: /cheer|celebrat|jump/i,
+    stretch: /stretch/i,
+    sweep: /sweep/i,
+    look: /look/i,
+};
+
+function ModelCharacter({ model, speed, action }: { model: LoadedModel; speed?: RefObject<number>; action?: RefObject<Action> }) {
     // Each character needs its own copy of the skinned mesh and skeleton.
     const scene = useMemo(() => {
         const copy = cloneSkinned(model.scene);
@@ -49,7 +67,8 @@ function ModelCharacter({ model, speed }: { model: LoadedModel; speed?: RefObjec
         const idle = make(/idle/i) ?? make(/.*/);
         const walk = make(/walk/i);
         const run = make(/run|jog|sprint/i);
-        return { idle, walk: walk ?? run ?? idle, run: run ?? walk ?? idle };
+        const special = Object.fromEntries(Object.entries(ACTION_CLIPS).map(([name, re]) => [name, make(re)])) as Partial<Record<Action, AnimationAction | null>>;
+        return { idle, walk: walk ?? run ?? idle, run: run ?? walk ?? idle, special };
     }, [model, mixer]);
 
     const current = useRef<AnimationAction | null>(null);
@@ -64,13 +83,14 @@ function ModelCharacter({ model, speed }: { model: LoadedModel; speed?: RefObjec
 
     useFrame((_, delta) => {
         const s = speed?.current ?? 0;
-        const next = s < 0.1 ? actions.idle : s < 1.4 ? actions.walk : actions.run;
+        const special = actions.special[action?.current ?? 'idle'];
+        const next = s < 0.1 ? (special ?? actions.idle) : s < 1.4 ? actions.walk : actions.run;
         if (next && next !== current.current) {
             next.reset().fadeIn(0.2).play();
             current.current?.fadeOut(0.2);
             current.current = next;
         }
-        if (next && next !== actions.idle) next.timeScale = Math.max(0.6, s < 1.4 ? s : s / 1.6);
+        if (next && (next === actions.walk || next === actions.run)) next.timeScale = Math.max(0.6, s < 1.4 ? s : s / 1.6);
         mixer.update(Math.min(delta, 0.1));
     });
 
