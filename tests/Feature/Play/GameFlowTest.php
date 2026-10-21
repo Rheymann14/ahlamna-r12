@@ -44,15 +44,21 @@ class GameFlowTest extends TestCase
             ->assertJsonStructure(['token']);
     }
 
-    public function test_world_shows_lakeside_locked_for_new_players()
+    public function test_new_players_start_in_south_cotabato_with_other_provinces_locked()
     {
         $token = $this->register()['token'];
 
         $world = $this->withToken($token)->getJson('/api/play/world')->assertOk()->json('zones');
 
-        $this->assertFalse($world[0]['locked']);
-        $this->assertTrue($world[1]['locked']);
-        $this->assertCount(4, $world[0]['locations']);
+        $zones = collect($world)->keyBy('slug');
+        $this->assertFalse($zones['south-cotabato']['locked']);
+        $this->assertTrue($zones['sultan-kudarat']['locked']);
+        $this->assertTrue($zones['cotabato']['locked']);
+        $this->assertCount(5, $zones['south-cotabato']['locations']);
+
+        // Lake Sebu is in an open province but its quest needs level 2.
+        $sebu = collect($zones['south-cotabato']['locations'])->firstWhere('slug', 'loc_lake_sebu');
+        $this->assertTrue($sebu['quests'][0]['locked']);
     }
 
     public function test_questions_never_reveal_correct_answers()
@@ -69,7 +75,7 @@ class GameFlowTest extends TestCase
     public function test_locked_quests_cannot_be_started()
     {
         $token = $this->register()['token'];
-        $quest = Quest::whereHas('location', fn ($q) => $q->where('slug', 'loc_lakeside'))->first();
+        $quest = Quest::whereHas('location', fn ($q) => $q->where('slug', 'loc_lake_sebu'))->first();
 
         $this->withToken($token)->postJson("/api/play/quests/{$quest->id}/attempts")->assertForbidden();
     }

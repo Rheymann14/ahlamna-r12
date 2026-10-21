@@ -8,14 +8,24 @@ use App\Models\Topic;
 use App\Models\Zone;
 use Illuminate\Database\Seeder;
 
+
 /**
- * Starter world: two zones, five NPC locations and one quest each.
+ * Starter world: Region XII's provinces as zones, an NPC in each main town, and five quests.
+ *
+ * Positions are world meters with Koronadal City at (0, 0); 1 pixel on the reference map = 2 m
+ * (see resources/js/play/world/region.ts, which uses the same conversion).
  *
  * NOTE: The questions below are SAMPLE content for development. They must go through
  * medical/content review (e.g. DOH CHD XII, CPD XII) before being used with real players.
  */
 class WorldSeeder extends Seeder
 {
+    /** Map pixel -> world meters (Koronadal City is the origin). */
+    private static function world(float $px, float $py): array
+    {
+        return [($px - 457) * 2, ($py - 320) * 2];
+    }
+
     public function run(): void
     {
         $topics = collect([
@@ -24,34 +34,53 @@ class WorldSeeder extends Seeder
             ['health-habits', 'Nutrition and healthy habits', '#BA7517'],
             ['consent', 'Consent and relationships', '#7F77DD'],
             ['mental-health', 'Mental health', '#1D9E75'],
+            ['online-safety', 'Online safety', '#D4537E'],
+            ['gender', 'Gender and equality', '#534AB7'],
+            ['teen-pregnancy', 'Teen pregnancy prevention', '#D85A30'],
+            ['substance-use', 'Smoking, vaping and alcohol', '#639922'],
         ])->mapWithKeys(fn ($t) => [$t[0] => Topic::updateOrCreate(['slug' => $t[0]], ['name' => $t[1], 'color' => $t[2]])]);
 
-        $poblacion = Zone::updateOrCreate(['slug' => 'poblacion'], [
-            'name' => 'Poblacion',
-            'description' => 'The town center: school, health center, plaza and home.',
-            'unlock_level' => 1,
-            'sort' => 1,
-        ]);
+        // Zones are the provinces of Region XII, opened one by one as players level up.
+        $zoneData = [
+            ['south-cotabato', 'South Cotabato', 'Home of Koronadal City and Lake Sebu.', 1],
+            ['general-santos', 'General Santos City', 'The Tuna Capital and its busy fish port.', 2],
+            ['sultan-kudarat', 'Sultan Kudarat', 'Isulan, Tacurong and the rice fields of the west.', 3],
+            ['sarangani', 'Sarangani', 'Coastal towns around Sarangani Bay.', 3],
+            ['cotabato', 'Cotabato', 'Kidapawan City at the foot of Mt. Apo.', 4],
+        ];
+        $zones = [];
+        foreach ($zoneData as $i => [$slug, $name, $description, $level]) {
+            $zones[$slug] = Zone::updateOrCreate(['slug' => $slug], [
+                'name' => $name,
+                'description' => $description,
+                'unlock_level' => $level,
+                'sort' => $i + 1,
+            ]);
+        }
+        Zone::whereNotIn('slug', array_keys($zones))->delete();
 
-        $lakeside = Zone::updateOrCreate(['slug' => 'lakeside'], [
-            'name' => 'Lakeside',
-            'description' => 'A calm lake inspired by Lake Sebu. A place to rest the mind.',
-            'unlock_level' => 3,
-            'sort' => 2,
-        ]);
+        [$sebuX, $sebuZ] = self::world(432, 380);
+        [$gsX, $gsZ] = self::world(532, 410);
+        [$isX, $isZ] = self::world(396, 287);
+        [$alX, $alZ] = self::world(572, 420);
+        [$kiX, $kiZ] = self::world(520, 190);
 
-        // [zone, topic, slug, name, npc, role, greeting, x, z]
+        // [zone, topic, slug, name, npc, role, greeting, x, z] — x/z is the building's center.
         $locations = [
-            [$poblacion, 'puberty', 'loc_school', 'National High School', 'Sir Ben', 'Guidance teacher', 'Hello! Growing up comes with lots of questions. Let\'s talk about them.', -16, -10],
-            [$poblacion, 'sti-hiv', 'loc_health_center', 'Teen Health Center', 'Ate Nena', 'Nurse', 'Maayong adlaw! Everything you ask here is confidential.', 16, -10],
-            [$poblacion, 'health-habits', 'loc_home', 'Bahay ni Lola', 'Lola Pacing', 'Grandmother', 'Come in, iho, iha! A healthy body starts at home.', -16, 12],
-            [$poblacion, 'consent', 'loc_plaza', 'Youth Hub at the Plaza', 'Kuya Migs', 'Peer educator', 'Hey! Respect is the coolest thing you can have. Want to test what you know?', 6, 4],
-            [$lakeside, 'mental-health', 'loc_lakeside', 'Lakeside Wellness Spot', 'Inday Lia', 'Youth counselor', 'Breathe in, breathe out. Let\'s take care of your mind today.', 20, 22],
+            ['south-cotabato', 'puberty', 'loc_school', 'Koronadal National High School', 'Sir Ben', 'Guidance teacher', 'Hello! Growing up comes with lots of questions. Let\'s talk about them.', -16, -10],
+            ['south-cotabato', 'sti-hiv', 'loc_health_center', 'Teen Health Center', 'Ate Nena', 'Nurse', 'Maayong adlaw! Everything you ask here is confidential.', 16, -10],
+            ['south-cotabato', 'health-habits', 'loc_home', 'Bahay ni Lola', 'Lola Pacing', 'Grandmother', 'Come in, iho, iha! A healthy body starts at home.', -16, 12],
+            ['south-cotabato', 'consent', 'loc_plaza', 'Youth Hub at the Plaza', 'Kuya Migs', 'Peer educator', 'Hey! Respect is the coolest thing you can have. Want to test what you know?', 6, 4],
+            ['south-cotabato', 'mental-health', 'loc_lake_sebu', 'Lake Sebu Wellness Spot', 'Inday Lia', 'Youth counselor', 'Breathe in, breathe out. Let\'s take care of your mind today.', $sebuX, $sebuZ - 13],
+            ['general-santos', 'online-safety', 'loc_gensan_port', 'Fish Port Youth Corner', 'Kuya Dodong', 'Youth volunteer', 'Welcome to GenSan! Online, stay as careful as you are at sea.', $gsX, $gsZ - 13],
+            ['sultan-kudarat', 'gender', 'loc_isulan_youth', 'Isulan Youth Center', 'Ma\'am Aisha', 'Youth development officer', 'Assalamu alaikum! Everyone deserves equal respect and chances.', $isX, $isZ - 13],
+            ['sarangani', 'teen-pregnancy', 'loc_alabel_capitol', 'Sarangani Youth Desk', 'Ate Jing', 'Population officer', 'Hello from Alabel! Let\'s talk about planning your future.', $alX, $alZ - 13],
+            ['cotabato', 'substance-use', 'loc_kidapawan_hub', 'Kidapawan Youth Hub', 'Kuya Rey', 'Health educator', 'Fresh air from Mt. Apo! Let\'s keep your lungs and mind healthy.', $kiX, $kiZ - 13],
         ];
 
         foreach ($locations as [$zone, $topic, $slug, $name, $npc, $role, $greeting, $x, $z]) {
             Location::updateOrCreate(['slug' => $slug], [
-                'zone_id' => $zone->id,
+                'zone_id' => $zones[$zone]->id,
                 'topic_id' => $topics[$topic]->id,
                 'name' => $name,
                 'npc_name' => $npc,
@@ -61,12 +90,13 @@ class WorldSeeder extends Seeder
                 'position_z' => $z,
             ]);
         }
+        Location::whereNotIn('slug', array_column($locations, 2))->delete();
 
         foreach ($this->quests() as $slug => $quest) {
             $location = Location::where('slug', $slug)->first();
             $model = Quest::updateOrCreate(
                 ['location_id' => $location->id, 'title' => $quest['title']],
-                ['intro' => $quest['intro'], 'type' => 'quiz', 'xp_reward' => 50, 'coin_reward' => 20, 'is_published' => true],
+                ['intro' => $quest['intro'], 'type' => 'quiz', 'min_level' => $quest['min_level'] ?? 1, 'xp_reward' => 50, 'coin_reward' => 20, 'is_published' => true],
             );
 
             $model->questions()->delete();
@@ -136,8 +166,9 @@ class WorldSeeder extends Seeder
                     ['In the Philippines, what is the age of sexual consent under RA 11648?', ['12', '14', '16', '18'], 2, 'RA 11648 (2022) raised the age of sexual consent from 12 to 16 to better protect children.'],
                 ],
             ],
-            'loc_lakeside' => [
+            'loc_lake_sebu' => [
                 'title' => 'Mind matters',
+                'min_level' => 2,
                 'intro' => 'Inday Lia wants to help you care for your mental health.',
                 'questions' => [
                     ['You have felt very sad and lost interest in things for more than two weeks. What should you do?', ['Keep it to yourself', 'Talk to a trusted adult or counselor', 'Wait for it to pass on its own', 'Post about it online only'], 1, 'Feeling this way for two weeks or more is a sign to reach out. Talking to someone you trust is a strong first step.'],

@@ -1,10 +1,12 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { ApiError, api } from './api';
+import { resetCamera } from './camera';
 import { bindKeyboard } from './input';
-import { useGame } from './store';
+import { isPaused, useGame } from './store';
 import { AuthScreen } from './ui/AuthScreen';
 import { BadgesPanel } from './ui/BadgesPanel';
 import { Hud } from './ui/Hud';
+import { MapPanel } from './ui/Minimap';
 import { MenuPanel } from './ui/MenuPanel';
 import { QuestPanel } from './ui/QuestPanel';
 
@@ -36,14 +38,23 @@ export function App() {
             });
     }, [token, player]);
 
-    useEffect(
-        () =>
-            bindKeyboard(() => {
-                const s = useGame.getState();
-                return s.openSlug !== null || s.showBadges || s.showMenu;
-            }),
-        [],
-    );
+    useEffect(() => {
+        const unbind = bindKeyboard(() => isPaused(useGame.getState()), resetCamera);
+        const escape = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            const s = useGame.getState();
+            s.openLocation(null);
+            s.setShowBadges(false);
+            s.setShowMenu(false);
+            s.setShowTravel(false);
+            s.setShowMap(false);
+        };
+        window.addEventListener('keydown', escape);
+        return () => {
+            unbind();
+            window.removeEventListener('keydown', escape);
+        };
+    }, []);
 
     if (!token) return <AuthScreen />;
     if (error) return <Loading text={error} />;
@@ -58,6 +69,7 @@ export function App() {
             <QuestPanel />
             <BadgesPanel />
             <MenuPanel />
+            <MapPanel />
         </div>
     );
 }

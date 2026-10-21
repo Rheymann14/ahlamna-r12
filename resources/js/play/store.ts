@@ -17,14 +17,24 @@ function detectQuality(): Quality {
     return weak ? 'low' : 'high';
 }
 
+/** Live player position for the minimap (mutable; updated every frame without re-rendering). */
+export const playerState = { x: 0, z: 0, heading: 0, cameraYaw: 0 };
+
 type GameState = {
     token: string | null;
     player: Player | null;
     zones: Zone[];
+    /** Location slug, or "terminal:<town>" for a jeepney terminal. */
     nearSlug: string | null;
     openSlug: string | null;
     showBadges: boolean;
     showMenu: boolean;
+    showTravel: boolean;
+    showMap: boolean;
+    /** Where the player is, for the HUD: province name and nearby town. */
+    area: { province: string | null; town: string | null };
+    /** Set by the travel menu; consumed by the player controller. */
+    teleport: [number, number] | null;
     toast: string | null;
     quality: Quality;
 
@@ -35,6 +45,11 @@ type GameState = {
     openLocation: (slug: string | null) => void;
     setShowBadges: (show: boolean) => void;
     setShowMenu: (show: boolean) => void;
+    setShowTravel: (show: boolean) => void;
+    setShowMap: (show: boolean) => void;
+    setArea: (province: string | null, town: string | null) => void;
+    travelTo: (spot: [number, number]) => void;
+    consumeTeleport: () => [number, number] | null;
     flash: (message: string) => void;
     setQuality: (quality: Quality) => void;
     logout: () => Promise<void>;
@@ -50,6 +65,10 @@ export const useGame = create<GameState>((set, get) => ({
     openSlug: null,
     showBadges: false,
     showMenu: false,
+    showTravel: false,
+    showMap: false,
+    area: { province: null, town: null },
+    teleport: null,
     toast: null,
     quality: detectQuality(),
 
@@ -73,6 +92,21 @@ export const useGame = create<GameState>((set, get) => ({
     openLocation: (slug) => set({ openSlug: slug }),
     setShowBadges: (showBadges) => set({ showBadges }),
     setShowMenu: (showMenu) => set({ showMenu }),
+    setShowTravel: (showTravel) => set({ showTravel }),
+    setShowMap: (showMap) => set({ showMap }),
+
+    setArea: (province, town) => {
+        const a = get().area;
+        if (a.province !== province || a.town !== town) set({ area: { province, town } });
+    },
+
+    travelTo: (spot) => set({ teleport: spot, showTravel: false, showMap: false }),
+
+    consumeTeleport: () => {
+        const t = get().teleport;
+        if (t) set({ teleport: null });
+        return t;
+    },
 
     flash: (message) => {
         clearTimeout(toastTimer);
@@ -92,9 +126,14 @@ export const useGame = create<GameState>((set, get) => ({
     logout: async () => {
         await api.logout().catch(() => undefined);
         tokenStore.clear();
-        set({ token: null, player: null, zones: [], openSlug: null, nearSlug: null, showMenu: false });
+        set({ token: null, player: null, zones: [], openSlug: null, nearSlug: null, showMenu: false, showTravel: false, showMap: false });
     },
 }));
+
+/** True while a panel is open and the world should ignore movement. */
+export function isPaused(s: GameState): boolean {
+    return s.openSlug !== null || s.showBadges || s.showMenu || s.showTravel || s.showMap;
+}
 
 export function allLocations(zones: Zone[]): (WorldLocation & { zone: Zone })[] {
     return zones.flatMap((zone) => zone.locations.map((loc) => ({ ...loc, zone })));

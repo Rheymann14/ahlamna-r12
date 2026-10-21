@@ -1,8 +1,10 @@
 import { useFrame } from '@react-three/fiber';
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import type { Group } from 'three';
 import type { WorldLocation } from '../api';
-import { Avatar, type AvatarColors } from './Avatar';
+import { useModel } from './assets';
+import type { AvatarColors } from './Avatar';
+import { Character } from './Character';
 import { BUILDINGS, DEFAULT_BUILDING, npcSpot } from './layout';
 import { Roof } from './Scenery';
 
@@ -11,7 +13,11 @@ const NPC_COLORS: Record<string, AvatarColors> = {
     loc_health_center: { skin: '#D9A066', hair: '#2C2C2A', shirt: '#FFFFFF', pants: '#E6F1FB' },
     loc_home: { skin: '#B97A4A', hair: '#D3D1C7', shirt: '#D85A30', pants: '#633806' },
     loc_plaza: { skin: '#A86B3C', hair: '#2C2C2A', shirt: '#7F77DD', pants: '#0C447C' },
-    loc_lakeside: { skin: '#C68B59', hair: '#412402', shirt: '#1D9E75', pants: '#5F5E5A' },
+    loc_lake_sebu: { skin: '#C68B59', hair: '#412402', shirt: '#1D9E75', pants: '#5F5E5A' },
+    loc_gensan_port: { skin: '#A86B3C', hair: '#2C2C2A', shirt: '#378ADD', pants: '#444441' },
+    loc_isulan_youth: { skin: '#B97A4A', hair: '#2C2C2A', shirt: '#7F77DD', pants: '#2C2C2A' },
+    loc_alabel_capitol: { skin: '#C68B59', hair: '#2C2C2A', shirt: '#D85A30', pants: '#444441' },
+    loc_kidapawan_hub: { skin: '#D9A066', hair: '#412402', shirt: '#639922', pants: '#633806' },
 };
 
 const FALLBACK_COLORS: AvatarColors = { skin: '#C68B59', hair: '#2C2C2A', shirt: '#888780', pants: '#444441' };
@@ -52,7 +58,12 @@ function Marker({ state }: { state: MarkerState }) {
 }
 
 function Building({ slug }: { slug: string }) {
+    const model = useModel('buildings', slug);
+    const scene = useMemo(() => model?.scene.clone(), [model]);
     const s = BUILDINGS[slug] ?? DEFAULT_BUILDING;
+
+    // A building modelled in Blender replaces the placeholder (exported at real size, door facing +Z).
+    if (scene) return <primitive object={scene} />;
     const [w, h, d] = s.size;
 
     if (s.kind === 'gazebo') {
@@ -126,7 +137,7 @@ export function LocationSpot({ location, marker }: { location: WorldLocation; ma
             </group>
             <group position={[nx, 0, nz]}>
                 <group ref={npc}>
-                    <Avatar colors={NPC_COLORS[location.slug] ?? FALLBACK_COLORS} speed={idle} />
+                    <Character modelKey={location.slug} fallbackKey="npc_default" colors={NPC_COLORS[location.slug] ?? FALLBACK_COLORS} speed={idle} />
                 </group>
                 <Marker state={marker} />
             </group>
