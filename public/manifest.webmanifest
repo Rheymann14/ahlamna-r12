@@ -1,0 +1,12 @@
+{
+    "name": "AHlam Na! Region XII",
+    "short_name": "AHlam Na!",
+    "description": "A learning game on adolescent health for SOCCSKSARGEN youth.",
+    "start_url": "/play",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "any",
+    "background_color": "#B5D4F4",
+    "theme_color": "#791F1F",
+    "icons": []
+}

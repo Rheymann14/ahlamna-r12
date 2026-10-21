@@ -45,7 +45,7 @@ class WorldSeeder extends Seeder
             [$poblacion, 'puberty', 'loc_school', 'National High School', 'Sir Ben', 'Guidance teacher', 'Hello! Growing up comes with lots of questions. Let\'s talk about them.', -16, -10],
             [$poblacion, 'sti-hiv', 'loc_health_center', 'Teen Health Center', 'Ate Nena', 'Nurse', 'Maayong adlaw! Everything you ask here is confidential.', 16, -10],
             [$poblacion, 'health-habits', 'loc_home', 'Bahay ni Lola', 'Lola Pacing', 'Grandmother', 'Come in, iho, iha! A healthy body starts at home.', -16, 12],
-            [$poblacion, 'consent', 'loc_plaza', 'Youth Hub at the Plaza', 'Kuya Migs', 'Peer educator', 'Hey! Respect is the coolest thing you can have. Want to test what you know?', 4, 2],
+            [$poblacion, 'consent', 'loc_plaza', 'Youth Hub at the Plaza', 'Kuya Migs', 'Peer educator', 'Hey! Respect is the coolest thing you can have. Want to test what you know?', 6, 4],
             [$lakeside, 'mental-health', 'loc_lakeside', 'Lakeside Wellness Spot', 'Inday Lia', 'Youth counselor', 'Breathe in, breathe out. Let\'s take care of your mind today.', 20, 22],
         ];
 

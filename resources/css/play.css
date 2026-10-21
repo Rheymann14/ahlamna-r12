@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+
+@source '../js/play';
+
+html,
+body,
+#play {
+    margin: 0;
+    height: 100%;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+    background: #b5d4f4;
+}
